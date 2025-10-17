@@ -1,0 +1,127 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlserver"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  name      String
+  password  String
+  role      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ATM {
+  id              Int       @id @default(autoincrement())
+  atmCode         String    @unique
+  atmSerial       String
+  atmModel        String
+  bankName        String
+  governorate     String
+  city            String
+  address         String
+  status          String    @default("active")
+  startDate       DateTime
+  lastMaintenance DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+model Maintenance {
+  id           Int      @id @default(autoincrement())
+  atmId        Int
+  technicianId Int
+  description  String
+  status       String
+  date         DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Technician {
+  id        Int      @id @default(autoincrement())
+  name      String
+  phone     String
+  email     String   @unique
+  status    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Bank {
+  id        Int      @id @default(autoincrement())
+  name      String
+  location  String
+  contact   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Representative {
+  id        Int        @id @default(autoincrement())
+  name      String
+  username  String     @unique
+  email     String     @unique
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  workPlans WorkPlan[]
+}
+
+model WorkPlan {
+  id               Int            @id @default(autoincrement())
+  bankName         String
+  startDate        DateTime
+  endDate          DateTime
+  governorate      String
+  city             String
+  statement        String
+  representativeId Int
+  dates            String         @default("[]")
+  atmCodes         String         @default("[]")
+  status           String         @default("pending")
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  atmReports       String?        @default("{}") @db.NVarChar(Max)
+  representative   Representative @relation(fields: [representativeId], references: [id])
+}
+
+model ClientComment {
+  id              Int      @id @default(autoincrement())
+  workPlanId      Int
+  atmCode         String
+  imageUrl        String?  @db.NVarChar(Max)
+  imageType       String?
+  commentText     String   @db.NVarChar(Max)
+  commentBy       String
+  commentByRole   String   @default("client")
+  parentCommentId Int?
+  isRead          Boolean  @default(false)
+  status          String   @default("open")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Governorate {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  cities    City[]
+}
+
+model City {
+  id            Int         @id @default(autoincrement())
+  name          String
+  governorateId Int
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  governorate   Governorate @relation(fields: [governorateId], references: [id])
+
+  @@unique([name, governorateId])
+}
