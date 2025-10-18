@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google';
 import './globals.css';
 import { AppShell } from '@/components/layout/app-shell';
 import { Toaster } from '@/components/ui/toaster';
+import { AuthProvider } from '@/contexts/AuthContext';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
@@ -65,10 +66,12 @@ export default function RootLayout({
         </style>
       </head>
       <body className="font-body antialiased" suppressHydrationWarning>
-        <div className="printable-area">
-            <AppShell>{children}</AppShell>
-        </div>
-        <Toaster />
+        <AuthProvider>
+          <div className="printable-area">
+              <AppShell>{children}</AppShell>
+          </div>
+          <Toaster />
+        </AuthProvider>
       </body>
     </html>
   );
