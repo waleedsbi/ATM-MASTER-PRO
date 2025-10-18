@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlserver"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -87,7 +87,7 @@ model WorkPlan {
   status           String         @default("pending")
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
-  atmReports       String?        @default("{}") @db.NVarChar(Max)
+  atmReports       String?        @default("{}")
   representative   Representative @relation(fields: [representativeId], references: [id])
 }
 
@@ -95,9 +95,9 @@ model ClientComment {
   id              Int      @id @default(autoincrement())
   workPlanId      Int
   atmCode         String
-  imageUrl        String?  @db.NVarChar(Max)
+  imageUrl        String?
   imageType       String?
-  commentText     String   @db.NVarChar(Max)
+  commentText     String
   commentBy       String
   commentByRole   String   @default("client")
   parentCommentId Int?
