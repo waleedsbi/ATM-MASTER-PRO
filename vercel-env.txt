@@ -1,0 +1,9 @@
+# Database Connection
+DATABASE_URL=postgresql://neondb_owner:npg_DZEOw1FxBk2S@ep-falling-smoke-adpwkqjk.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require
+
+# NextAuth Configuration
+NEXTAUTH_SECRET=atm-master-pro-secret-key-change-in-production-2024
+NEXTAUTH_URL=https://atm-master-2wfdou75y-waleeds-projects-825d803d.vercel.app
+
+# Node Environment
+NODE_ENV=production
