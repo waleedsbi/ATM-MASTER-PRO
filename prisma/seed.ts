@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { hash } from 'bcrypt';
 
 const prisma = new PrismaClient();
 
@@ -129,18 +130,24 @@ async function main() {
 
   // إضافة مستخدم تجريبي
   console.log('إضافة مستخدم تجريبي...');
+  
+  // Hash password: "admin123"
+  const hashedPassword = await hash('admin123', 10);
+  
   await prisma.user.upsert({
     where: { email: 'admin@example.com' },
     update: {},
     create: {
       email: 'admin@example.com',
       name: 'المسؤول',
-      password: '$2a$10$YourHashedPasswordHere', // يجب تشفير كلمة المرور
+      password: hashedPassword,
       role: 'admin',
     },
   });
 
   console.log('تم إضافة المستخدم التجريبي');
+  console.log('البريد الإلكتروني: admin@example.com');
+  console.log('كلمة المرور: admin123');
   console.log('✅ تمت إضافة جميع البيانات التجريبية بنجاح');
 }
 
