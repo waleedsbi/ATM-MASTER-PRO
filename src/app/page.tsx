@@ -70,11 +70,16 @@ export default function DashboardPage() {
     const handleFocus = () => {
       fetchDashboardStats(false);
     };
-    window.addEventListener('focus', handleFocus);
+    
+    if (typeof window !== 'undefined') {
+      window.addEventListener('focus', handleFocus);
+    }
 
     return () => {
       clearInterval(interval);
-      window.removeEventListener('focus', handleFocus);
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('focus', handleFocus);
+      }
     };
   }, []);
 
@@ -201,7 +206,7 @@ export default function DashboardPage() {
           </h2>
           {lastUpdated && (
             <p className="text-sm text-muted-foreground mt-1">
-              آخر تحديث: {formatDistanceToNow(lastUpdated, { addSuffix: true, locale: ar })}
+              آخر تحديث: {typeof window !== 'undefined' ? formatDistanceToNow(lastUpdated, { addSuffix: true, locale: ar }) : '--'}
             </p>
           )}
         </div>

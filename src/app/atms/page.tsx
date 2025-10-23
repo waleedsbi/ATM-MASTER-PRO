@@ -161,7 +161,11 @@ export default function AtmPage() {
             <DropdownMenuContent align="end">
               <DropdownMenuLabel>الإجراءات</DropdownMenuLabel>
               <DropdownMenuItem
-                onClick={() => navigator.clipboard.writeText(atm.id)}
+                onClick={() => {
+                  if (typeof window !== 'undefined' && navigator.clipboard) {
+                    navigator.clipboard.writeText(atm.id);
+                  }
+                }}
               >
                 نسخ معرف الصراف
               </DropdownMenuItem>

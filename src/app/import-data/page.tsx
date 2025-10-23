@@ -148,6 +148,7 @@ export default function ImportDataPage() {
     link.href = URL.createObjectURL(blob);
     link.download = `${selectedType}-template.csv`;
     link.click();
+    URL.revokeObjectURL(link.href);
   };
 
   return (

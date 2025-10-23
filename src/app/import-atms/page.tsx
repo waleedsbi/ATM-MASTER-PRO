@@ -68,6 +68,7 @@ ATM002,SN002,Model B,بنك مصر,الإسكندرية,سموحة,عنوان ا
     link.href = URL.createObjectURL(blob);
     link.download = 'atms-template.csv';
     link.click();
+    URL.revokeObjectURL(link.href);
   };
 
   return (

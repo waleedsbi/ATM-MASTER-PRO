@@ -80,13 +80,15 @@ export default function UploadLinksPage() {
   const copyToClipboard = async (workPlanId: number) => {
     const link = getUploadLink(workPlanId);
     try {
-      await navigator.clipboard.writeText(link);
-      setCopiedId(workPlanId);
-      toast({
-        title: "تم النسخ ✓",
-        description: "تم نسخ الرابط إلى الحافظة",
-      });
-      setTimeout(() => setCopiedId(null), 2000);
+      if (typeof window !== 'undefined' && navigator.clipboard) {
+        await navigator.clipboard.writeText(link);
+        setCopiedId(workPlanId);
+        toast({
+          title: "تم النسخ ✓",
+          description: "تم نسخ الرابط إلى الحافظة",
+        });
+        setTimeout(() => setCopiedId(null), 2000);
+      }
     } catch (error) {
       toast({
         title: "خطأ",
@@ -100,7 +102,7 @@ export default function UploadLinksPage() {
     const link = getUploadLink(workPlanId);
     const text = `رابط رفع صور الزيارة\n\nالبنك: ${plan.bankName}\nالمحافظة: ${plan.governorate} - ${plan.city}\nالبيان: ${plan.statement}\n\nالرابط:\n${link}`;
 
-    if (navigator.share) {
+    if (typeof window !== 'undefined' && navigator.share) {
       try {
         await navigator.share({
           title: 'رابط رفع صور الزيارة',
@@ -109,7 +111,7 @@ export default function UploadLinksPage() {
       } catch (error) {
         console.log('Share cancelled');
       }
-    } else {
+    } else if (typeof window !== 'undefined') {
       // Fallback: Open WhatsApp Web
       const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(text)}`;
       window.open(whatsappUrl, '_blank');
@@ -118,7 +120,9 @@ export default function UploadLinksPage() {
 
   const openLink = (workPlanId: number) => {
     const link = getUploadLink(workPlanId);
-    window.open(link, '_blank');
+    if (typeof window !== 'undefined') {
+      window.open(link, '_blank');
+    }
   };
 
   const getRepresentativeName = (representativeId: number) => {
