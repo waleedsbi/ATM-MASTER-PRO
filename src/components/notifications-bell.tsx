@@ -117,6 +117,8 @@ export function NotificationBell({ userRole }: { userRole: 'client' | 'reviewer'
 
   // Refresh when window gains focus
   React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    
     const handleFocus = () => {
       fetchNotifications(false, showAll);
     };
@@ -278,7 +280,7 @@ export function NotificationBell({ userRole }: { userRole: 'client' | 'reviewer'
           </Tabs>
           
           <div className="text-xs text-center text-muted-foreground border-t pt-2">
-            آخر تحديث: {format(new Date(), 'HH:mm:ss')}
+            آخر تحديث: {typeof window !== 'undefined' ? format(new Date(), 'HH:mm:ss') : '--:--:--'}
           </div>
         </div>
       </PopoverContent>
@@ -326,7 +328,7 @@ function NotificationCard({
           كود المكينة: {comment.atmCode}
         </span>
         <span>
-          {format(new Date(comment.createdAt), 'dd/MM/yyyy HH:mm')}
+          {typeof window !== 'undefined' ? format(new Date(comment.createdAt), 'dd/MM/yyyy HH:mm') : comment.createdAt}
         </span>
       </div>
       

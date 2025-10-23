@@ -29,7 +29,7 @@ import { NotificationBell } from '../notifications-bell';
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isLoginPage = pathname === '/login';
-  const userAvatar = PlaceHolderImages.find((img) => img.id === 'avatar1');
+  const userAvatar = typeof window !== 'undefined' ? PlaceHolderImages.find((img) => img.id === 'avatar1') : null;
 
   if (isLoginPage) {
     return <div className="min-h-screen bg-background">{children}</div>;
@@ -61,7 +61,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <DropdownMenuTrigger asChild>
               <Button variant="secondary" size="icon" className="rounded-full" suppressHydrationWarning>
                 <Avatar className="h-8 w-8">
-                  <AvatarImage src={userAvatar?.imageUrl} alt="User avatar" data-ai-hint={userAvatar?.imageHint} />
+                  <AvatarImage src={userAvatar?.imageUrl || ''} alt="User avatar" data-ai-hint={userAvatar?.imageHint || ''} />
                   <AvatarFallback>U</AvatarFallback>
                 </Avatar>
                 <span className="sr-only">تبديل قائمة المستخدم</span>

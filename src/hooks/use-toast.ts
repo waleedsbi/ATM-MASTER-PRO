@@ -143,6 +143,14 @@ function dispatch(action: Action) {
 type Toast = Omit<ToasterToast, "id">
 
 function toast({ ...props }: Toast) {
+  if (typeof window === 'undefined') {
+    return {
+      id: 'ssr-toast',
+      dismiss: () => {},
+      update: () => {},
+    };
+  }
+
   const id = genId()
 
   const update = (props: ToasterToast) =>
@@ -172,9 +180,16 @@ function toast({ ...props }: Toast) {
 }
 
 function useToast() {
-  const [state, setState] = React.useState<State>(memoryState)
+  const [state, setState] = React.useState<State>(() => {
+    if (typeof window === 'undefined') {
+      return { toasts: [] };
+    }
+    return memoryState;
+  })
 
   React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    
     listeners.push(setState)
     return () => {
       const index = listeners.indexOf(setState)

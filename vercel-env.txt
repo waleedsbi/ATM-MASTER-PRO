@@ -1,9 +1,36 @@
-# Database Connection
-DATABASE_URL=postgresql://neondb_owner:npg_DZEOw1FxBk2S@ep-falling-smoke-adpwkqjk.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require
+COPY AND PASTE THESE INTO VERCEL
+=================================
 
-# NextAuth Configuration
-NEXTAUTH_SECRET=atm-master-pro-secret-key-change-in-production-2024
-NEXTAUTH_URL=https://atm-master-2wfdou75y-waleeds-projects-825d803d.vercel.app
+Go to: Vercel Dashboard → Your Project → Settings → Environment Variables
 
-# Node Environment
-NODE_ENV=production
+Add these 4 variables (one by one):
+
+---
+Variable Name: DATABASE_URL
+Value: postgresql://neondb_owner:npg_DZEOw1FxBk2S@ep-falling-smoke-adpwkqjk.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require
+Environments: Select All (Production, Preview, Development)
+
+---
+Variable Name: NEXTAUTH_SECRET
+Value: atm-master-pro-secret-key-change-in-production-2024
+Environments: Select All (Production, Preview, Development)
+
+---
+Variable Name: NEXTAUTH_URL
+Value: https://atm-master-pro.vercel.app
+Environments: Production only
+
+---
+Variable Name: NODE_ENV
+Value: production
+Environments: Production only
+
+---
+
+AFTER ADDING ALL VARIABLES:
+1. Go to Deployments tab
+2. Click "Redeploy" on the latest deployment
+3. Wait 1-2 minutes for build to complete
+4. Test your application
+
+The deployment should also trigger automatically from the GitHub push we just made.
