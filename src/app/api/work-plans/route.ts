@@ -288,48 +288,82 @@ export async function PUT(request: Request) {
         
         // Handle ATM-specific updates (status, images, or notes for a specific ATM)
         if (body.atmCode && (body.status !== undefined || body.beforeImages !== undefined || body.afterImages !== undefined || body.notes !== undefined)) {
-          console.log('Updating ATM-specific data for:', body.atmCode);
+          console.log('=== UPDATING ATM-SPECIFIC DATA ===');
+          console.log('ATM Code:', body.atmCode);
+          console.log('WorkPlan ID:', body.id);
           
           // Parse existing atmReports
           let atmReports: any = {};
           try {
             atmReports = JSON.parse(existingPlan.atmReports || '{}');
+            console.log('✅ Successfully parsed existing atmReports');
+            console.log('📊 Existing ATMs:', Object.keys(atmReports));
           } catch (e) {
-            console.error('Error parsing atmReports:', e);
+            console.error('❌ Error parsing atmReports:', e);
+            atmReports = {};
           }
           
           // Initialize ATM report if it doesn't exist
           if (!atmReports[body.atmCode]) {
+            console.log('🆕 Creating new ATM report for:', body.atmCode);
             atmReports[body.atmCode] = {
               beforeImages: [],
               afterImages: [],
               notes: [],
               status: 'pending'
             };
+          } else {
+            console.log('📝 Updating existing ATM report for:', body.atmCode);
+            console.log('📸 Current beforeImages count:', atmReports[body.atmCode].beforeImages?.length || 0);
+            console.log('📸 Current afterImages count:', atmReports[body.atmCode].afterImages?.length || 0);
           }
           
           // Update the specific ATM's data
           if (body.status !== undefined) {
             atmReports[body.atmCode].status = body.status;
-            console.log('Updating status for ATM:', body.atmCode, 'to:', body.status);
+            console.log('📊 Updating status for ATM:', body.atmCode, 'to:', body.status);
           }
           
           if (body.beforeImages !== undefined) {
             atmReports[body.atmCode].beforeImages = body.beforeImages;
-            console.log('Updating beforeImages for ATM:', body.atmCode, 'count:', body.beforeImages.length);
+            console.log('📸 UPDATING BEFORE IMAGES:');
+            console.log('📸 ATM:', body.atmCode);
+            console.log('📸 Count:', body.beforeImages.length);
+            console.log('📸 First image size:', body.beforeImages[0]?.length || 0, 'characters');
+            console.log('📸 First image preview:', body.beforeImages[0]?.substring(0, 100) + '...');
           }
           
           if (body.afterImages !== undefined) {
             atmReports[body.atmCode].afterImages = body.afterImages;
-            console.log('Updating afterImages for ATM:', body.atmCode, 'count:', body.afterImages.length);
+            console.log('📸 UPDATING AFTER IMAGES:');
+            console.log('📸 ATM:', body.atmCode);
+            console.log('📸 Count:', body.afterImages.length);
+            console.log('📸 First image size:', body.afterImages[0]?.length || 0, 'characters');
+            console.log('📸 First image preview:', body.afterImages[0]?.substring(0, 100) + '...');
           }
           
           if (body.notes !== undefined) {
             atmReports[body.atmCode].notes = body.notes;
-            console.log('Updating notes for ATM:', body.atmCode, 'count:', body.notes.length);
+            console.log('📝 Updating notes for ATM:', body.atmCode, 'count:', body.notes.length);
+          }
+          
+          const finalDataSize = JSON.stringify(atmReports).length;
+          console.log('💾 Final atmReports data size:', finalDataSize, 'bytes');
+          console.log('💾 Data size in KB:', Math.round(finalDataSize / 1024), 'KB');
+          
+          // Check data size limit
+          const MAX_DATA_SIZE = 10 * 1024 * 1024; // 10MB
+          if (finalDataSize > MAX_DATA_SIZE) {
+            console.error('❌ DATA TOO LARGE:', finalDataSize, 'bytes');
+            return NextResponse.json({ 
+              error: 'حجم البيانات كبير جداً',
+              details: `الحجم: ${Math.round(finalDataSize / 1024)}KB (الحد الأقصى: ${MAX_DATA_SIZE / 1024 / 1024}MB)`,
+              dataSize: finalDataSize
+            }, { status: 413 });
           }
           
           updateData.atmReports = JSON.stringify(atmReports);
+          console.log('✅ Prepared updateData with atmReports');
         }
         // Legacy: Update global status if no atmCode provided (for backward compatibility)
         else if (body.status !== undefined && !body.atmCode) {
@@ -337,12 +371,38 @@ export async function PUT(request: Request) {
           console.log('Updating global status to:', body.status);
         }
         
+        console.log('💾 Attempting database update...');
+        console.log('💾 Update data keys:', Object.keys(updateData));
+        console.log('💾 Update data size:', JSON.stringify(updateData).length, 'bytes');
+        
         const workPlan = await prisma.workPlan.update({
           where: { id: body.id },
           data: updateData
         });
 
-        console.log('Work plan updated successfully:', workPlan.id);
+        console.log('✅ DATABASE UPDATE SUCCESSFUL!');
+        console.log('✅ WorkPlan ID:', workPlan.id);
+        console.log('✅ Updated atmReports size:', workPlan.atmReports?.length || 0, 'characters');
+        console.log('✅ Updated atmReports preview:', workPlan.atmReports?.substring(0, 200) + '...');
+        
+        // Verify the data was actually saved
+        if (body.atmCode && updateData.atmReports) {
+          try {
+            const savedReports = JSON.parse(workPlan.atmReports || '{}');
+            const savedAtmData = savedReports[body.atmCode];
+            if (savedAtmData) {
+              console.log('✅ VERIFICATION SUCCESS:');
+              console.log('✅ ATM Code found in saved data:', body.atmCode);
+              console.log('✅ Before images count:', savedAtmData.beforeImages?.length || 0);
+              console.log('✅ After images count:', savedAtmData.afterImages?.length || 0);
+            } else {
+              console.error('❌ VERIFICATION FAILED: ATM data not found in saved reports');
+            }
+          } catch (e) {
+            console.error('❌ VERIFICATION ERROR: Could not parse saved atmReports:', e);
+          }
+        }
+
         return NextResponse.json(workPlan);
       } catch (error) {
         console.error('Prisma error:', error);

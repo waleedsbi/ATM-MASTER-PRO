@@ -527,9 +527,15 @@ export default function WorkPlanReportPage() {
 
     const handleImagesSave = async (id: string, beforeImages: string[], afterImages: string[]) => {
       try {
+        console.log('🔄 === STARTING IMAGE SAVE PROCESS ===');
+        console.log('📸 Report ID:', id);
+        console.log('📸 Before images count:', beforeImages.length);
+        console.log('📸 After images count:', afterImages.length);
+        
         // Find the report to get the workPlanId and atmCode
         const report = data.find(r => r.id === id);
         if (!report) {
+          console.error('❌ Report not found for ID:', id);
           throw new Error('Report not found');
         }
         
@@ -537,25 +543,51 @@ export default function WorkPlanReportPage() {
         const workPlanId = report.workPlanId || parseInt(id.split('-')[0]);
         const atmCode = report.atmCode;
         
-        console.log('Saving images for ATM:', atmCode, 'workPlanId:', workPlanId);
+        console.log('💾 Saving images for ATM:', atmCode, 'workPlanId:', workPlanId);
         
+        const requestData = {
+          id: workPlanId,
+          atmCode: atmCode,
+          beforeImages,
+          afterImages,
+        };
+        
+        const requestSize = JSON.stringify(requestData).length;
+        console.log('📤 Request data size:', requestSize, 'bytes');
+        console.log('📤 Request data size in KB:', Math.round(requestSize / 1024), 'KB');
+        
+        if (beforeImages.length > 0) {
+          console.log('📸 First before image size:', beforeImages[0].length, 'characters');
+          console.log('📸 First before image preview:', beforeImages[0].substring(0, 100) + '...');
+        }
+        
+        if (afterImages.length > 0) {
+          console.log('📸 First after image size:', afterImages[0].length, 'characters');
+          console.log('📸 First after image preview:', afterImages[0].substring(0, 100) + '...');
+        }
+        
+        console.log('🌐 Sending request to API...');
         const response = await fetch('/api/work-plans', {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            id: workPlanId,
-            atmCode: atmCode,
-            beforeImages,
-            afterImages,
-          }),
+          body: JSON.stringify(requestData),
         });
 
+        console.log('📡 Response status:', response.status);
+        console.log('📡 Response ok:', response.ok);
+
         if (!response.ok) {
-          throw new Error('Failed to save images');
+          const errorData = await response.json();
+          console.error('❌ API Error Response:', errorData);
+          throw new Error(errorData.error || 'Failed to save images');
         }
 
+        const result = await response.json();
+        console.log('✅ API Response received:', result);
+        console.log('✅ Response atmReports size:', result.atmReports?.length || 0, 'characters');
+        
         // Update local state only for this specific ATM report
         setData(currentData => currentData.map(item => 
           item.id === id
@@ -563,16 +595,22 @@ export default function WorkPlanReportPage() {
             : item
         ));
         
-        console.log('Images saved successfully for ATM:', atmCode);
+        console.log('✅ Local state updated successfully');
+        console.log('✅ Images saved successfully for ATM:', atmCode);
+        
         toast({
           title: "تم الحفظ",
           description: `تم حفظ الصور للماكينة ${atmCode}`,
         });
       } catch (error) {
-        console.error('Error saving images:', error);
+        console.error('❌ === IMAGE SAVE ERROR ===');
+        console.error('❌ Error type:', error instanceof Error ? error.constructor.name : typeof error);
+        console.error('❌ Error message:', error instanceof Error ? error.message : 'Unknown error');
+        console.error('❌ Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+        
         toast({
           title: "خطأ",
-          description: "حدث خطأ أثناء حفظ الصور",
+          description: `حدث خطأ أثناء حفظ الصور: ${error instanceof Error ? error.message : 'خطأ غير معروف'}`,
           variant: "destructive",
         });
       }

@@ -143,22 +143,54 @@ function MobileUploadContent() {
   const handleUpload = async () => {
     if (!selectedAtm || !workPlan) return;
 
+    console.log('🔄 === STARTING MOBILE UPLOAD PROCESS ===');
+    console.log('📸 Selected ATM:', selectedAtm);
+    console.log('📸 WorkPlan ID:', workPlan.id);
+    console.log('📸 Before images count:', beforeImages.length);
+    console.log('📸 After images count:', afterImages.length);
+
     setUploading(true);
     try {
+      const requestData = {
+        id: workPlan.id,
+        atmCode: selectedAtm,
+        beforeImages,
+        afterImages,
+      };
+      
+      const requestSize = JSON.stringify(requestData).length;
+      console.log('📤 Request data size:', requestSize, 'bytes');
+      console.log('📤 Request data size in KB:', Math.round(requestSize / 1024), 'KB');
+      
+      if (beforeImages.length > 0) {
+        console.log('📸 First before image size:', beforeImages[0].length, 'characters');
+      }
+      
+      if (afterImages.length > 0) {
+        console.log('📸 First after image size:', afterImages[0].length, 'characters');
+      }
+      
+      console.log('🌐 Sending request to API...');
       const response = await fetch('/api/work-plans', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          id: workPlan.id,
-          atmCode: selectedAtm,
-          beforeImages,
-          afterImages,
-        }),
+        body: JSON.stringify(requestData),
       });
 
-      if (!response.ok) throw new Error('Failed to upload images');
+      console.log('📡 Response status:', response.status);
+      console.log('📡 Response ok:', response.ok);
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('❌ API Error Response:', errorData);
+        throw new Error(errorData.error || 'Failed to upload images');
+      }
+
+      const result = await response.json();
+      console.log('✅ API Response received:', result);
+      console.log('✅ Response atmReports size:', result.atmReports?.length || 0, 'characters');
 
       toast({
         title: "تم الحفظ ✓",
@@ -166,12 +198,18 @@ function MobileUploadContent() {
       });
 
       // Reload work plan to get updated data
+      console.log('🔄 Reloading work plan data...');
       await fetchWorkPlan();
+      console.log('✅ Work plan data reloaded successfully');
     } catch (error) {
-      console.error('Error uploading images:', error);
+      console.error('❌ === MOBILE UPLOAD ERROR ===');
+      console.error('❌ Error type:', error instanceof Error ? error.constructor.name : typeof error);
+      console.error('❌ Error message:', error instanceof Error ? error.message : 'Unknown error');
+      console.error('❌ Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+      
       toast({
         title: "خطأ",
-        description: "فشل حفظ الصور",
+        description: `فشل حفظ الصور: ${error instanceof Error ? error.message : 'خطأ غير معروف'}`,
         variant: "destructive",
       });
     } finally {
