@@ -45,7 +45,6 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { PlusCircle, Download, Trash2, Save, CalendarIcon, Pencil, X, Search } from 'lucide-react';
 import type { ATMData } from '@/lib/types';
-import { atmData } from '@/lib/data';
 import { banks } from '@/lib/data';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
@@ -93,7 +92,8 @@ function DatePicker({ date: initialDate, onSelectDate }: { date?: Date, onSelect
 
 export default function AtmDataPage() {
   const { toast } = useToast();
-  const [data, setData] = React.useState<ATMData[]>(atmData);
+  const [data, setData] = React.useState<ATMData[]>([]);
+  const [isLoading, setIsLoading] = React.useState(true);
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
   const [globalFilter, setGlobalFilter] = React.useState('');
@@ -108,21 +108,35 @@ export default function AtmDataPage() {
 
   React.useEffect(() => {
     setIsMounted(true);
-    // Try to fetch real ATMs from API; fallback to local mock data
+    // Fetch real ATMs from API (database)
     (async () => {
       try {
+        setIsLoading(true);
         const res = await fetch('/api/atms', { cache: 'no-store' });
         if (res.ok) {
           const atms = await res.json();
-          if (Array.isArray(atms) && atms.length) {
-            setData(atms);
+          if (Array.isArray(atms)) {
+            setData(atms); // Set data even if empty array
           }
+        } else {
+          toast({
+            title: "خطأ",
+            description: "فشل في تحميل بيانات الماكينات",
+            variant: "destructive",
+          });
         }
       } catch (e) {
-        // Ignore, keep existing mock data
+        console.error('Error fetching ATMs:', e);
+        toast({
+          title: "خطأ",
+          description: "حدث خطأ أثناء تحميل البيانات",
+          variant: "destructive",
+        });
+      } finally {
+        setIsLoading(false);
       }
     })();
-  }, []);
+  }, [toast]);
 
   const governorates = React.useMemo(() => {
     const uniqueGovernorates = new Set(data.map(item => item.governorate).filter(gov => gov));
@@ -399,7 +413,13 @@ export default function AtmDataPage() {
               ))}
             </TableHeader>
             <TableBody>
-              {table.getRowModel().rows?.length ? (
+              {isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={columns.length} className="h-24 text-center">
+                    جاري التحميل...
+                  </TableCell>
+                </TableRow>
+              ) : table.getRowModel().rows?.length ? (
                 table.getRowModel().rows.map((row) => (
                   <TableRow key={row.id}>
                     {row.getVisibleCells().map((cell) => (
@@ -412,7 +432,7 @@ export default function AtmDataPage() {
               ) : (
                 <TableRow>
                   <TableCell colSpan={columns.length} className="h-24 text-center">
-                    لا توجد نتائج.
+                    لا توجد بيانات للماكينات.
                   </TableCell>
                 </TableRow>
               )}
