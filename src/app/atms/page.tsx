@@ -66,7 +66,6 @@ import {
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import type { ATM } from '@/lib/types';
-import { atms } from '@/lib/data';
 import { PlusCircle } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { useToast } from "@/hooks/use-toast"
@@ -80,7 +79,39 @@ const statusVariant: { [key: string]: 'default' | 'secondary' | 'destructive' | 
 
 export default function AtmPage() {
   const { toast } = useToast();
-  const [data, setData] = React.useState<ATM[]>(atms);
+  const [data, setData] = React.useState<ATM[]>([]);
+  const [isLoading, setIsLoading] = React.useState(true);
+
+  // Fetch ATMs from database
+  React.useEffect(() => {
+    const fetchATMs = async () => {
+      try {
+        setIsLoading(true);
+        const response = await fetch('/api/atms');
+        if (response.ok) {
+          const atms = await response.json();
+          setData(atms);
+        } else {
+          toast({
+            title: "خطأ",
+            description: "فشل في تحميل بيانات الماكينات",
+            variant: "destructive",
+          });
+        }
+      } catch (error) {
+        console.error('Error fetching ATMs:', error);
+        toast({
+          title: "خطأ",
+          description: "حدث خطأ أثناء تحميل البيانات",
+          variant: "destructive",
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchATMs();
+  }, [toast]);
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] =
@@ -106,44 +137,58 @@ export default function AtmPage() {
     setIsDeleteDialogOpen(true);
   };
   
-  const columns: ColumnDef<ATM>[] = [
+  const columns: ColumnDef<any>[] = [
     {
-      accessorKey: 'bank',
+      accessorKey: 'atmCode',
       header: ({ column }) => {
         return (
           <Button
             variant="ghost"
             onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
           >
-            البنك
+            كود الماكينة
             <CaretSortIcon className="ml-2 h-4 w-4" />
           </Button>
         );
       },
-      cell: ({ row }) => <div className="font-medium">{row.getValue('bank')}</div>,
+      cell: ({ row }) => <div className="font-medium">{row.getValue('atmCode')}</div>,
     },
     {
-      accessorKey: 'location',
-      header: 'الموقع',
-      cell: ({ row }) => <div>{row.getValue('location')}</div>,
+      accessorKey: 'bankName',
+      header: 'البنك',
+      cell: ({ row }) => <div className="font-medium">{row.getValue('bankName')}</div>,
+    },
+    {
+      accessorKey: 'governorate',
+      header: 'المحافظة',
+      cell: ({ row }) => <div>{row.getValue('governorate')}</div>,
+    },
+    {
+      accessorKey: 'city',
+      header: 'المدينة',
+      cell: ({ row }) => <div>{row.getValue('city')}</div>,
+    },
+    {
+      accessorKey: 'address',
+      header: 'العنوان',
+      cell: ({ row }) => <div>{row.getValue('address')}</div>,
     },
     {
       accessorKey: 'status',
       header: 'الحالة',
       cell: ({ row }) => {
         const status = row.getValue('status') as string;
-        return <Badge variant={statusVariant[status]}>{status}</Badge>;
+        const statusLabel = status === 'active' ? 'نشط' : status === 'inactive' ? 'غير نشط' : status;
+        return <Badge variant={status === 'active' ? 'default' : 'secondary'}>{statusLabel}</Badge>;
       },
     },
     {
-      accessorKey: 'lastMaintenanceDate',
+      accessorKey: 'lastMaintenance',
       header: 'آخر صيانة',
-      cell: ({ row }) => <div>{format(parseISO(row.getValue('lastMaintenanceDate')), 'PPP')}</div>,
-    },
-    {
-      accessorKey: 'maintenancePlan',
-      header: 'خطة الصيانة',
-      cell: ({ row }) => <div>{row.getValue('maintenancePlan')}</div>,
+      cell: ({ row }) => {
+        const date = row.getValue('lastMaintenance');
+        return <div>{date ? format(parseISO(date as string), 'PPP') : 'لا يوجد'}</div>;
+      },
     },
     {
       id: 'actions',
@@ -221,10 +266,10 @@ export default function AtmPage() {
         </div>
         <div className="flex items-center justify-between">
             <Input
-            placeholder="تصفية حسب البنك..."
-            value={(table.getColumn('bank')?.getFilterValue() as string) ?? ''}
+            placeholder="تصفية حسب كود الماكينة..."
+            value={(table.getColumn('atmCode')?.getFilterValue() as string) ?? ''}
             onChange={(event) =>
-                table.getColumn('bank')?.setFilterValue(event.target.value)
+                table.getColumn('atmCode')?.setFilterValue(event.target.value)
             }
             className="max-w-sm"
             />
@@ -276,7 +321,16 @@ export default function AtmPage() {
                 ))}
             </TableHeader>
             <TableBody>
-                {table.getRowModel().rows?.length ? (
+                {isLoading ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={columns.length}
+                      className="h-24 text-center"
+                    >
+                      جاري التحميل...
+                    </TableCell>
+                  </TableRow>
+                ) : table.getRowModel().rows?.length ? (
                 table.getRowModel().rows.map((row) => (
                     <TableRow
                     key={row.id}
@@ -298,7 +352,7 @@ export default function AtmPage() {
                     colSpan={columns.length}
                     className="h-24 text-center"
                     >
-                    لا توجد نتائج.
+                    لا توجد ماكينات صراف آلي.
                     </TableCell>
                 </TableRow>
                 )}
