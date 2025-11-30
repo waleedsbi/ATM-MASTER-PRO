@@ -61,7 +61,6 @@ interface Representative {
   name: string;
 }
 
-
 interface WorkPlanFormData {
   bankName: string;
   startDate: string;
@@ -111,82 +110,76 @@ const atmColumns: ColumnDef<ATMData>[] = [
   },
 ];
 
-
-
-
 function DatesMultiSelect({ 
-    value, 
-    onChange,
-    startDate,
-    endDate 
+  value, 
+  onChange,
+  startDate,
+  endDate 
 }: { 
-    value: string[], 
-    onChange: (dates: string[]) => void,
-    startDate?: Date,
-    endDate?: Date
+  value: string[], 
+  onChange: (dates: string[]) => void,
+  startDate?: Date,
+  endDate?: Date
 }) {
-    const dates = React.useMemo(() => {
-        if (!startDate || !endDate) return [];
-        const dates: string[] = [];
-        const current = new Date(startDate);
-        const end = new Date(endDate);
-        
-        while (current <= end) {
-            dates.push(format(current, 'yyyy-MM-dd'));
-            current.setDate(current.getDate() + 1);
-        }
-        return dates;
-    }, [startDate, endDate]);
+  const dates = React.useMemo(() => {
+    if (!startDate || !endDate) return [];
+    const dates: string[] = [];
+    const current = new Date(startDate);
+    const end = new Date(endDate);
     
-    return (
-        <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="w-full justify-between">
-                    <span>{value.length > 0 ? `${value.length} تم الاختيار` : "أختار التواريخ"}</span>
-                    <ChevronDown className="h-4 w-4 opacity-50" />
-                </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-56 max-h-60 overflow-y-auto">
-                <DropdownMenuLabel>التواريخ المتاحة</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                {dates.map(date => (
-                    <DropdownMenuCheckboxItem
-                        key={date}
-                        checked={value.includes(date)}
-                        onCheckedChange={(checked) => {
-                            return checked
-                                ? onChange([...value, date])
-                                : onChange(value.filter(d => d !== date))
-                        }}
-                    >
-                        {date}
-                    </DropdownMenuCheckboxItem>
-                ))}
-            </DropdownMenuContent>
-        </DropdownMenu>
-    )
+    while (current <= end) {
+      dates.push(format(current, 'yyyy-MM-dd'));
+      current.setDate(current.getDate() + 1);
+    }
+    return dates;
+  }, [startDate, endDate]);
+  
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" className="w-full justify-between">
+          <span>{value.length > 0 ? `${value.length} تم الاختيار` : "أختار التواريخ"}</span>
+          <ChevronDown className="h-4 w-4 opacity-50" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent className="w-56 max-h-60 overflow-y-auto">
+        <DropdownMenuLabel>التواريخ المتاحة</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {dates.map(date => (
+          <DropdownMenuCheckboxItem
+            key={date}
+            checked={value.includes(date)}
+            onCheckedChange={(checked) => {
+              return checked
+                ? onChange([...value, date])
+                : onChange(value.filter(d => d !== date))
+            }}
+          >
+            {date}
+          </DropdownMenuCheckboxItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
 }
 
 export default function WorkPlanPage() {
   const { toast } = useToast();
   
-  // Form state
   const [selectedBank, setSelectedBank] = React.useState('');
   const [startDate, setStartDate] = React.useState<Date>();
   const [endDate, setEndDate] = React.useState<Date>();
   const [selectedGovernorate, setSelectedGovernorate] = React.useState<Governorate | null>(null);
-  const [selectedCityName, setSelectedCityName] = React.useState<string | null>(null);
+  const [selectedCityName, setSelectedCityName] = React.useState<string>('');
   const [selectedRepresentative, setSelectedRepresentative] = React.useState('');
   const [statement, setStatement] = React.useState('');
   const [selectedDates, setSelectedDates] = React.useState<string[]>([]);
 
-  // UI state
   const [isDialogOpen, setIsDialogOpen] = React.useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
   const [planToDelete, setPlanToDelete] = React.useState<WorkPlan | null>(null);
   const [planToEdit, setPlanToEdit] = React.useState<WorkPlan | null>(null);
   
-  // Table state
   const [data, setData] = React.useState<WorkPlan[]>([]);
   const [representatives, setRepresentatives] = React.useState<Representative[]>([]);
   const [atms, setAtms] = React.useState<ATMData[]>([]);
@@ -194,13 +187,58 @@ export default function WorkPlanPage() {
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
   const [rowSelection, setRowSelection] = React.useState({});
 
-  // ATM data filtering
   const filteredAtms = React.useMemo(() => {
     if (!selectedCityName) return [];
-    return atms.filter(atm => atm.city === selectedCityName);
-  }, [selectedCityName, atms]);
+    
+    const selectedBankName = selectedBank 
+      ? banks.find(b => b.id === selectedBank)?.nameAr?.trim() 
+      : '';
+    
+    // Helper function to normalize bank names for comparison
+    const normalizeBankName = (name: string) => {
+      return name?.trim().replace(/\s+/g, ' ') || '';
+    };
+    
+    console.log('Filtering ATMs:', {
+      selectedCityName,
+      selectedBankName,
+      totalAtms: atms.length,
+      bankSelected: !!selectedBank,
+      uniqueBankNames: Array.from(new Set(atms.map(a => a.bankName))).slice(0, 10)
+    });
+    
+    if (!selectedBankName) {
+      const cityAtms = atms.filter(atm => atm.city === selectedCityName);
+      console.log('ATMs for city (no bank filter):', cityAtms.length);
+      return cityAtms;
+    }
+    
+    const normalizedSelectedBank = normalizeBankName(selectedBankName);
+    const filtered = atms.filter(atm => {
+      const matchesCity = atm.city === selectedCityName;
+      const normalizedAtmBank = normalizeBankName(atm.bankName || '');
+      const matchesBank = normalizedAtmBank === normalizedSelectedBank;
+      
+      if (matchesCity && !matchesBank) {
+        console.log('Bank name mismatch:', {
+          expected: normalizedSelectedBank,
+          actual: normalizedAtmBank,
+          atmCode: atm.atmCode
+        });
+      }
+      
+      return matchesCity && matchesBank;
+    });
+    
+    console.log('Filtered ATMs (with bank):', {
+      count: filtered.length,
+      bankName: normalizedSelectedBank,
+      sampleAtms: filtered.slice(0, 3).map(a => ({ code: a.atmCode, bank: a.bankName }))
+    });
+    
+    return filtered;
+  }, [selectedCityName, selectedBank, atms, banks]);
 
-  // ATM table
   const atmTable = useReactTable({
     data: filteredAtms,
     columns: atmColumns,
@@ -218,7 +256,6 @@ export default function WorkPlanPage() {
     }
   });
 
-  // Data fetching
   const fetchWorkPlans = React.useCallback(async () => {
     try {
       const response = await fetch('/api/work-plans');
@@ -251,8 +288,14 @@ export default function WorkPlanPage() {
 
   const fetchAtms = React.useCallback(async () => {
     try {
+      console.log('Starting to fetch ATMs...');
       const response = await fetch('/api/atms');
       const data = await response.json();
+      console.log('ATMs fetched successfully:', {
+        count: data.length,
+        firstAtm: data[0],
+        cities: Array.from(new Set(data.map((a: any) => a.city)))
+      });
       setAtms(data);
     } catch (error) {
       console.error('Error fetching ATMs:', error);
@@ -264,20 +307,14 @@ export default function WorkPlanPage() {
     }
   }, [toast]);
 
-  // Initial data fetching
   React.useEffect(() => {
     fetchWorkPlans();
     fetchRepresentatives();
     fetchAtms();
   }, [fetchWorkPlans, fetchRepresentatives, fetchAtms]);
 
-
-
   const handleSubmit = React.useCallback(async () => {
     try {
-      console.log('Starting form submission...');
-      
-      // Validate required fields
       const requiredFields = [];
       if (!selectedBank) requiredFields.push('البنك');
       if (!startDate) requiredFields.push('تاريخ البداية');
@@ -288,7 +325,6 @@ export default function WorkPlanPage() {
       if (!selectedRepresentative) requiredFields.push('المندوب');
 
       if (requiredFields.length > 0) {
-        console.log('Missing required fields:', requiredFields);
         toast({
           title: 'حقول مطلوبة',
           description: `يرجى ملء الحقول التالية: ${requiredFields.join('، ')}`,
@@ -306,12 +342,9 @@ export default function WorkPlanPage() {
         return;
       }
 
-      // Get selected ATMs
       const selectedAtms = Object.keys(rowSelection)
         .map(index => filteredAtms[parseInt(index)])
         .filter(Boolean);
-
-      console.log('Selected ATMs:', selectedAtms);
 
       if (selectedAtms.length === 0) {
         toast({
@@ -322,7 +355,6 @@ export default function WorkPlanPage() {
         return;
       }
 
-      // Validate dates are defined and in correct order
       if (!startDate || !endDate) {
         toast({
           title: 'خطأ في التواريخ',
@@ -341,7 +373,6 @@ export default function WorkPlanPage() {
         return;
       }
 
-      // Find and validate bank details
       const bankDetails = banks.find(b => b.id === selectedBank);
       if (!bankDetails) {
         toast({
@@ -361,7 +392,6 @@ export default function WorkPlanPage() {
         return;
       }
 
-      // Prepare work plan data
       const workPlanData: WorkPlanFormData = {
         bankName: bankDetails.nameAr,
         startDate: format(startDate, 'yyyy-MM-dd'),
@@ -375,18 +405,11 @@ export default function WorkPlanPage() {
         status: 'pending'
       };
 
-      console.log('=== WORK PLAN SUBMISSION ===');
-      console.log('Sending work plan data:', JSON.stringify(workPlanData, null, 2));
-      console.log('Selected dates:', selectedDates);
-      console.log('Selected ATMs:', selectedAtms);
-      console.log('Row selection:', rowSelection);
-
       try {
         const isEditing = !!planToEdit;
         const method = isEditing ? 'PUT' : 'POST';
         const dataToSend = isEditing ? { ...workPlanData, id: planToEdit.id } : workPlanData;
         
-        console.log('Sending work plan request:', { method, data: dataToSend, isEditing });
         const response = await fetch('/api/work-plans', {
           method,
           headers: {
@@ -397,11 +420,9 @@ export default function WorkPlanPage() {
 
         let responseData;
         const text = await response.text();
-        console.log('Raw server response:', text);
         
         try {
           responseData = text ? JSON.parse(text) : null;
-          console.log('Parsed response:', responseData);
         } catch (e) {
           console.error('Failed to parse server response:', { error: e, text });
           toast({
@@ -413,58 +434,16 @@ export default function WorkPlanPage() {
         }
 
         if (!response.ok) {
-          console.error('Server returned error status:', {
-            status: response.status,
-            statusText: response.statusText,
-            data: responseData,
-            url: response.url,
-            headers: Object.fromEntries(response.headers.entries())
-          });
-          
-          // Check if responseData is empty or invalid
-          if (!responseData || typeof responseData !== 'object' || Object.keys(responseData).length === 0) {
-            console.error('Response data is empty or invalid! This usually means database connection failed or server error.');
-            
-            // Check database health
-            try {
-              const healthCheck = await fetch('/api/health');
-              const healthData = await healthCheck.json();
-              
-              if (healthData.database === 'disconnected') {
-                toast({
-                  title: '❌ خطأ في الاتصال بقاعدة البيانات',
-                  description: `لا يمكن الاتصال بقاعدة البيانات. يرجى التحقق من:\n1. ملف .env موجود ويحتوي على DATABASE_URL\n2. SQL Server يعمل\n3. معلومات الاتصال صحيحة\n\nالخطأ: ${healthData.error || 'غير معروف'}`,
-                  variant: 'destructive',
-                });
-                return;
-              }
-            } catch (e) {
-              console.error('Failed to check health:', e);
-            }
-            
-            toast({
-              title: `خطأ ${response.status}`,
-              description: `حدث خطأ في الخادم (${response.status}): ${response.statusText || 'لا توجد تفاصيل'}\n\nيرجى التحقق من:\n✓ ملف .env موجود ويحتوي على DATABASE_URL\n✓ قاعدة البيانات متصلة\n✓ تشغيل الأمر: npx prisma db push\n✓ تشغيل الأمر: npx prisma generate`,
-              variant: 'destructive',
-            });
-            return;
-          }
-          
           const errorMessage = responseData?.error || responseData?.message || 'حدث خطأ أثناء إنشاء خطة العمل';
-          const errorDetails = responseData?.details ? `\nالتفاصيل: ${responseData.details}` : '';
-          const errorHint = responseData?.hint ? `\n💡 ${responseData.hint}` : '';
-          
           toast({
             title: `خطأ ${response.status}`,
-            description: errorMessage + errorDetails + errorHint,
+            description: errorMessage,
             variant: 'destructive',
           });
           return;
         }
 
-        // Validate successful response
         if (!responseData?.id) {
-          console.error('Invalid server response:', { response: responseData });
           toast({
             title: 'خطأ في البيانات',
             description: 'البيانات المستلمة من الخادم غير صالحة',
@@ -479,14 +458,13 @@ export default function WorkPlanPage() {
           description: isEditing ? 'تم تحديث خطة العمل بنجاح' : 'تم إضافة خطة العمل بنجاح',
         });
 
-        // Reset form
         setIsDialogOpen(false);
         setPlanToEdit(null);
         setSelectedBank('');
         setStartDate(undefined);
         setEndDate(undefined);
         setSelectedGovernorate(null);
-        setSelectedCityName(null);
+        setSelectedCityName('');
         setStatement('');
         setSelectedRepresentative('');
         setSelectedDates([]);
@@ -501,13 +479,6 @@ export default function WorkPlanPage() {
       }
 
     } catch (error) {
-      console.error('Error creating work plan:', {
-        error,
-        type: error instanceof Error ? error.constructor.name : typeof error,
-        message: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : 'No stack trace'
-      });
-      
       const errorMessage = error instanceof Error 
         ? error.message 
         : 'حدث خطأ غير متوقع أثناء إنشاء خطة العمل';
@@ -533,14 +504,12 @@ export default function WorkPlanPage() {
     toast,
     fetchWorkPlans,
     atmTable,
-    setIsDialogOpen,
     planToEdit
   ]);
 
   const openEditDialog = React.useCallback((plan: WorkPlan) => {
     setPlanToEdit(plan);
     
-    // Parse the work plan data and populate the form
     const bankId = banks.find(b => b.nameAr === plan.bankName)?.id || '';
     const governorate = governorates.find(g => g.nameAr === plan.governorate) || null;
     
@@ -552,13 +521,11 @@ export default function WorkPlanPage() {
     setStatement(plan.statement);
     setSelectedRepresentative(plan.representativeId.toString());
     
-    // Parse dates and atmCodes from JSON strings
     try {
       const dates = JSON.parse(plan.dates);
       const atmCodes = JSON.parse(plan.atmCodes);
       setSelectedDates(Array.isArray(dates) ? dates : []);
       
-      // Set row selection based on atmCodes
       if (Array.isArray(atmCodes)) {
         const newRowSelection: Record<string, boolean> = {};
         atmCodes.forEach(code => {
@@ -617,7 +584,6 @@ export default function WorkPlanPage() {
         <Button
           variant="ghost"
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          suppressHydrationWarning
         >
           اسم البنك
           <CaretSortIcon className="mr-2 h-4 w-4" />
@@ -656,7 +622,6 @@ export default function WorkPlanPage() {
             size="icon" 
             className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
             onClick={() => openEditDialog(row.original)}
-            suppressHydrationWarning
           >
             <Edit className="h-4 w-4" />
           </Button>
@@ -665,7 +630,6 @@ export default function WorkPlanPage() {
             size="icon" 
             className="text-destructive hover:text-destructive/80"
             onClick={() => openDeleteDialog(row.original)}
-            suppressHydrationWarning
           >
             <Trash2 className="h-4 w-4" />
           </Button>
@@ -674,7 +638,6 @@ export default function WorkPlanPage() {
     },
   ], [openEditDialog, openDeleteDialog]);
 
-  // Work plans table
   const workPlansTable = useReactTable({
     data,
     columns: workPlanColumns,
@@ -693,43 +656,72 @@ export default function WorkPlanPage() {
   const handleGovernorateChange = React.useCallback((govId: string) => {
     const gov = governorates.find(g => g.id === govId) || null;
     setSelectedGovernorate(gov);
-    setSelectedCityName(null);
+    setSelectedCityName('');
   }, []);
   
+  const availableCities = React.useMemo(() => {
+    if (!selectedGovernorate) return [];
+    
+    const staticCities = selectedGovernorate?.cities.map(c => c.nameAr) || [];
+    
+    // Helper function to normalize bank names for comparison
+    const normalizeBankName = (name: string) => {
+      return name?.trim().replace(/\s+/g, ' ') || '';
+    };
+    
+    const selectedBankName = banks.find(b => b.id === selectedBank)?.nameAr?.trim() || '';
+    const normalizedSelectedBank = normalizeBankName(selectedBankName);
+    
+    const atmCities = selectedBankName 
+      ? atms
+          .filter(atm => {
+            const matchesGovernorate = atm.governorate === selectedGovernorate?.nameAr;
+            const normalizedAtmBank = normalizeBankName(atm.bankName || '');
+            const matchesBank = normalizedAtmBank === normalizedSelectedBank;
+            return matchesGovernorate && matchesBank;
+          })
+          .map(atm => atm.city)
+      : atms
+          .filter(atm => atm.governorate === selectedGovernorate?.nameAr)
+          .map(atm => atm.city);
+    
+    const combined = new Set([...staticCities, ...atmCities]);
+    return Array.from(combined).sort();
+  }, [selectedGovernorate, atms, selectedBank, banks]);
+  
   const handleCityChange = React.useCallback((cityName: string) => {
+    console.log('City changed to:', cityName);
     setSelectedCityName(cityName);
   }, []);
 
   return (
-    <div className="w-full p-4 md:p-8" suppressHydrationWarning>
-      <div className="flex items-center justify-between">
-          <div className="relative max-w-sm">
-            <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-            <Input
-              placeholder="بحث في خطط العمل..."
-              onChange={(event) =>
-                workPlansTable.getColumn('bankName')?.setFilterValue(event.target.value)
-              }
-              className="w-full pr-10"
-              suppressHydrationWarning
-            />
-          </div>
-          <div className="flex gap-2">
-              <Button className="bg-orange-500 hover:bg-orange-600 text-white" onClick={() => setIsDialogOpen(true)} suppressHydrationWarning>
-                  <PlusCircle className="ml-2 h-4 w-4" /> إضافة
-              </Button>
-              <Button variant="outline" className="bg-orange-500 hover:bg-orange-600 text-white" suppressHydrationWarning>
-                  <Download className="ml-2 h-4 w-4" /> تصدير
-              </Button>
-               <Button 
-                variant="outline" 
-                className="bg-blue-500 hover:bg-blue-600 text-white"
-                onClick={() => window.open('/system-status', '_blank')}
-                suppressHydrationWarning
-              >
-                  حالة النظام
-              </Button>
-          </div>
+    <div className="w-full p-4 md:p-8">
+      <div className="flex items-center justify-between mb-4">
+        <div className="relative max-w-sm">
+          <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+          <Input
+            placeholder="بحث في خطط العمل..."
+            onChange={(event) =>
+              workPlansTable.getColumn('bankName')?.setFilterValue(event.target.value)
+            }
+            className="w-full pr-10"
+          />
+        </div>
+        <div className="flex gap-2">
+          <Button className="bg-orange-500 hover:bg-orange-600 text-white" onClick={() => setIsDialogOpen(true)}>
+            <PlusCircle className="ml-2 h-4 w-4" /> إضافة
+          </Button>
+          <Button variant="outline" className="bg-orange-500 hover:bg-orange-600 text-white">
+            <Download className="ml-2 h-4 w-4" /> تصدير
+          </Button>
+          <Button 
+            variant="outline" 
+            className="bg-blue-500 hover:bg-blue-600 text-white"
+            onClick={() => window.open('/system-status', '_blank')}
+          >
+            حالة النظام
+          </Button>
+        </div>
       </div>
 
       <div className="rounded-md border mt-4">
@@ -775,80 +767,7 @@ export default function WorkPlanPage() {
 
       <div className="flex items-center justify-between space-x-2 py-4">
         <div className="flex-1 text-sm text-muted-foreground">
-            Page {atmTable.getState().pagination.pageIndex + 1} of {atmTable.getPageCount()} ({atmTable.getFilteredRowModel().rows.length} items)
-        </div>
-        <div className="flex items-center gap-2">
-                               <div className="flex items-center gap-1">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => atmTable.setPageIndex(0)}
-              disabled={!atmTable.getCanPreviousPage()}
-              suppressHydrationWarning
-            >
-              &lt;&lt;
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => atmTable.previousPage()}
-              disabled={!atmTable.getCanPreviousPage()}
-              suppressHydrationWarning
-            >
-              &lt;
-            </Button>
-          </div>
-          <div className="flex items-center gap-1">
-            {[...Array(5)].map((_, i) => (
-              <Button
-                key={i}
-                variant={atmTable.getState().pagination.pageIndex === i ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => atmTable.setPageIndex(i)}
-                suppressHydrationWarning
-              >
-                {i + 1}
-              </Button>
-            ))}
-          </div>
-          <div className="flex items-center gap-1">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => atmTable.nextPage()}
-              disabled={!atmTable.getCanNextPage()}
-              suppressHydrationWarning
-            >
-              &gt;
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => atmTable.setPageIndex(atmTable.getPageCount() - 1)}
-              disabled={!atmTable.getCanNextPage()}
-              suppressHydrationWarning
-            >
-              &gt;&gt;
-            </Button>
-          </div>
-          <Select
-            onValueChange={(value) => {
-              atmTable.setPageSize(Number(value))
-            }}
-            defaultValue={`${atmTable.getState().pagination.pageSize}`}
-          >
-                            <SelectTrigger className="w-24" suppressHydrationWarning>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="5">5</SelectItem>
-              <SelectItem value="10">10</SelectItem>
-              <SelectItem value="20">20</SelectItem>
-            </SelectContent>
-          </Select>
-          <div className="text-sm text-muted-foreground">
-            Item Total
-          </div>
+          صفحة {atmTable.getState().pagination.pageIndex + 1}
         </div>
       </div>
 
@@ -860,18 +779,18 @@ export default function WorkPlanPage() {
           setStartDate(undefined);
           setEndDate(undefined);
           setSelectedGovernorate(null);
-          setSelectedCityName(null);
+          setSelectedCityName('');
           setStatement('');
           setSelectedRepresentative('');
           setSelectedDates([]);
           atmTable.toggleAllRowsSelected(false);
         }
       }}>
-        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{planToEdit ? 'تعديل خطة' : 'إضافة خطة'}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 flex-grow overflow-y-auto pr-4">
+          <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="grid gap-2">
                 <Label>اسم البنك</Label>
@@ -969,9 +888,9 @@ export default function WorkPlanPage() {
                     <SelectValue placeholder="أختار المدينة" />
                   </SelectTrigger>
                   <SelectContent>
-                    {selectedGovernorate?.cities.map((city) => (
-                      <SelectItem key={city.id} value={city.nameAr}>
-                        {city.nameAr}
+                    {availableCities.map((city) => (
+                      <SelectItem key={city} value={city}>
+                        {city}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1015,139 +934,59 @@ export default function WorkPlanPage() {
               />
             </div>
 
-            <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                <Label>اختيار الماكينات</Label>
-                {selectedCityName && (
-                  <div className="text-sm text-muted-foreground">
-                    {Object.keys(rowSelection).length > 0 && `تم اختيار ${Object.keys(rowSelection).length} ماكينة`}
-                  </div>
-                )}
-              </div>
-              
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  {atmTable.getHeaderGroups().map((headerGroup) => (
-                    <TableRow key={headerGroup.id}>
-                      {headerGroup.headers.map((header) => (
-                        <TableHead key={header.id}>
-                          {flexRender(header.column.columnDef.header, header.getContext())}
-                        </TableHead>
-                      ))}
-                    </TableRow>
-                  ))}
-                </TableHeader>
-                <TableBody>
-                  {atmTable.getRowModel().rows?.length ? (
-                    atmTable.getRowModel().rows.map((row) => (
-                      <TableRow key={row.id}>
-                        {row.getVisibleCells().map((cell) => (
-                          <TableCell key={cell.id}>
-                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                          </TableCell>
+            <div className="grid gap-2">
+              <Label>اختيار الماكينات</Label>
+              <div className="border rounded-md">
+                <Table>
+                  <TableHeader>
+                    {atmTable.getHeaderGroups().map((headerGroup) => (
+                      <TableRow key={headerGroup.id}>
+                        {headerGroup.headers.map((header) => (
+                          <TableHead key={header.id}>
+                            {flexRender(header.column.columnDef.header, header.getContext())}
+                          </TableHead>
                         ))}
                       </TableRow>
-                    ))
-                  ) : (
-                    <TableRow>
-                      <TableCell colSpan={atmColumns.length} className="h-24 text-center">
-                        الرجاء اختيار مدينة لعرض الماكينات.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-              
-              <div className="flex justify-between items-center gap-2 mt-4 px-4 pb-4">
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => atmTable.setPageIndex(0)}
-                    disabled={!atmTable.getCanPreviousPage()}
-                  >
-                    {'<<'}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => atmTable.previousPage()}
-                    disabled={!atmTable.getCanPreviousPage()}
-                  >
-                    {'<'}
-                  </Button>
-                </div>
-                <div className="flex items-center gap-1">
-                  {Array.from({ length: Math.min(5, atmTable.getPageCount()) }, (_, i) => {
-                    const currentPage = atmTable.getState().pagination.pageIndex;
-                    const totalPages = atmTable.getPageCount();
-                    let pageNum: number;
-
-                    if (totalPages <= 5) {
-                      pageNum = i;
-                    } else if (currentPage < 3) {
-                      pageNum = i;
-                    } else if (currentPage > totalPages - 4) {
-                      pageNum = totalPages - 5 + i;
-                    } else {
-                      pageNum = currentPage - 2 + i;
-                    }
-
-                    return (
-                      <Button
-                        key={`page-${i}-${pageNum}`}
-                        variant={atmTable.getState().pagination.pageIndex === pageNum ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => atmTable.setPageIndex(pageNum)}
-                        className={atmTable.getState().pagination.pageIndex === pageNum ? "bg-orange-500 hover:bg-orange-600" : ""}
-                      >
-                        {pageNum + 1}
-                      </Button>
-                    );
-                  })}
-                </div>
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => atmTable.nextPage()}
-                    disabled={!atmTable.getCanNextPage()}
-                  >
-                    {'>'}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => atmTable.setPageIndex(atmTable.getPageCount() - 1)}
-                    disabled={!atmTable.getCanNextPage()}
-                  >
-                    {'>>'}
-                  </Button>
-                </div>
-                <Select
-                  onValueChange={(value) => {
-                    atmTable.setPageSize(Number(value))
-                  }}
-                  defaultValue={`${atmTable.getState().pagination.pageSize}`}
-                >
-                  <SelectTrigger className="w-24">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="5">5</SelectItem>
-                    <SelectItem value="10">10</SelectItem>
-                    <SelectItem value="20">20</SelectItem>
-                  </SelectContent>
-                </Select>
-                <div className="text-sm text-muted-foreground">
-                  صفحة {atmTable.getState().pagination.pageIndex + 1} من {atmTable.getPageCount()}
-                </div>
+                    ))}
+                  </TableHeader>
+                  <TableBody>
+                    {atmTable.getRowModel().rows?.length ? (
+                      atmTable.getRowModel().rows.map((row) => (
+                        <TableRow key={row.id}>
+                          {row.getVisibleCells().map((cell) => (
+                            <TableCell key={cell.id}>
+                              {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      ))
+                    ) : (
+                      <TableRow>
+                        <TableCell colSpan={atmColumns.length} className="h-24 text-center">
+                          <div className="space-y-2">
+                            <p className="text-muted-foreground">
+                              {!selectedCityName 
+                                ? 'الرجاء اختيار مدينة لعرض الماكينات' 
+                                : atms.length === 0
+                                ? 'لا توجد بيانات ماكينات محملة. يرجى التحقق من قاعدة البيانات.'
+                                : `لا توجد ماكينات للبنك "${banks.find(b => b.id === selectedBank)?.nameAr || 'غير محدد'}" في مدينة "${selectedCityName}"`}
+                            </p>
+                            {atms.length > 0 && selectedCityName && (
+                              <p className="text-xs text-gray-500">
+                                إجمالي الماكينات المتاحة: {atms.length}
+                              </p>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
               </div>
             </div>
-            </div>
           </div>
-          <DialogFooter className="flex-shrink-0">
+
+          <DialogFooter>
             <Button onClick={handleSubmit} className="bg-orange-500 hover:bg-orange-600 text-white">
               <Save className="ml-2 h-4 w-4" /> {planToEdit ? 'تحديث' : 'إضافة'}
             </Button>
