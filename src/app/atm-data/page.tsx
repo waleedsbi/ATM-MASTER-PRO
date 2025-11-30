@@ -143,7 +143,7 @@ export default function AtmDataPage() {
     return Array.from(uniqueGovernorates).sort();
   }, [data]);
 
-  // Derive banks list from current data to ensure it reflects DB truth
+  // Derive banks list from actual data in database
   const banksList = React.useMemo(() => {
     const uniqueBanks = new Set(data.map(item => item.bankName).filter(Boolean));
     return Array.from(uniqueBanks).sort();
@@ -158,6 +158,16 @@ export default function AtmDataPage() {
       const uniqueCities = new Set(filteredData.map(item => item.city).filter(city => city));
       return Array.from(uniqueCities).sort();
   }, [data, selectedGovernorate]);
+
+  // Filter data based on selected filters
+  const filteredData = React.useMemo(() => {
+    return data.filter(item => {
+      const matchesBank = selectedBank === 'all' || item.bankName === selectedBank;
+      const matchesGovernorate = selectedGovernorate === 'all' || item.governorate === selectedGovernorate;
+      const matchesCity = selectedCity === 'all' || item.city === selectedCity;
+      return matchesBank && matchesGovernorate && matchesCity;
+    });
+  }, [data, selectedBank, selectedGovernorate, selectedCity]);
 
   const handleUpdate = () => {
     if (!editingRow) return;
@@ -265,7 +275,7 @@ export default function AtmDataPage() {
   ];
 
   const table = useReactTable({
-    data,
+    data: filteredData,
     columns,
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
@@ -295,7 +305,6 @@ export default function AtmDataPage() {
                 <Label htmlFor="bank-select" className="text-sm font-medium">البنك</Label>
                 <Select value={selectedBank} onValueChange={(value) => {
                   setSelectedBank(value);
-                  table.getColumn('bankName')?.setFilterValue(value === 'all' ? '' : value);
                 }}>
                   <SelectTrigger id="bank-select" suppressHydrationWarning><SelectValue placeholder="أختار البنك" /></SelectTrigger>
                   <SelectContent>
@@ -311,8 +320,6 @@ export default function AtmDataPage() {
                 <Select value={selectedGovernorate} onValueChange={(value) => {
                   setSelectedGovernorate(value);
                   setSelectedCity('all'); // إعادة تعيين اختيار المدينة عند تغيير المحافظة
-                  table.getColumn('governorate')?.setFilterValue(value === 'all' ? '' : value);
-                  table.getColumn('city')?.setFilterValue(''); // مسح فلتر المدينة
                 }}>
                   <SelectTrigger id="governorate-select" suppressHydrationWarning><SelectValue placeholder="أختار المحافظة" /></SelectTrigger>
                   <SelectContent>
@@ -327,7 +334,6 @@ export default function AtmDataPage() {
                 <Label htmlFor="city-select" className="text-sm font-medium">المدينة</Label>
                 <Select value={selectedCity} onValueChange={(value) => {
                   setSelectedCity(value);
-                  table.getColumn('city')?.setFilterValue(value === 'all' ? '' : value);
                 }}>
                   <SelectTrigger id="city-select" suppressHydrationWarning><SelectValue placeholder="أختار المدينة" /></SelectTrigger>
                   <SelectContent>
@@ -352,9 +358,6 @@ export default function AtmDataPage() {
                   setSelectedBank('all');
                   setSelectedGovernorate('all');
                   setSelectedCity('all');
-                  table.getColumn('bankName')?.setFilterValue('');
-                  table.getColumn('governorate')?.setFilterValue('');
-                  table.getColumn('city')?.setFilterValue('');
                 }}
                 className="h-8"
                 suppressHydrationWarning

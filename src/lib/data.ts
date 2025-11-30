@@ -201,7 +201,27 @@ export const banks: Bank[] = [
         address: 'مول العرب، ميدان جهينة',
         mobile: '16664',
         logoId: 'avatar3',
-    }
+    },
+    {
+        id: 'bank-004',
+        nameAr: 'بنك مصر',
+        nameEn: 'Bank Misr',
+        governorate: 'القاهرة',
+        city: 'القاهرة',
+        address: 'فرع القاهرة الرئيسي',
+        mobile: '19555',
+        logoId: 'avatar4',
+    },
+    {
+        id: 'bank-005',
+        nameAr: 'البنك العربي',
+        nameEn: 'Arab Bank',
+        governorate: 'القاهرة',
+        city: 'القاهرة الجديدة',
+        address: 'المقر الرئيسي',
+        mobile: '19333',
+        logoId: 'avatar5',
+    },
 ];
 
 export const bankContracts: BankContract[] = [

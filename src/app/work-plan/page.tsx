@@ -27,6 +27,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -194,12 +195,101 @@ export default function WorkPlanPage() {
       ? banks.find(b => b.id === selectedBank)?.nameAr?.trim() 
       : '';
     
-    // Helper function to normalize bank names for comparison
-    const normalizeBankName = (name: string) => {
-      return name?.trim().replace(/\s+/g, ' ') || '';
+    // Helper function to normalize Arabic text (handle ي/ى and other variations)
+    const normalizeArabicText = (text: string): string => {
+      if (!text) return '';
+      let normalized = text
+        .trim()
+        .replace(/\s+/g, ' ')
+        .toLowerCase();
+      
+      // Normalize Arabic characters: convert ي to ى at end of words
+      // This handles "البنك العربي" vs "البنك العربى"
+      // Match ي at end of word or end of string
+      normalized = normalized.replace(/ي(\s|$)/g, 'ى$1');
+      
+      // Also handle other common variations
+      normalized = normalized
+        .replace(/أ/g, 'ا')
+        .replace(/إ/g, 'ا')
+        .replace(/آ/g, 'ا');
+      
+      return normalized;
     };
     
-    console.log('Filtering ATMs:', {
+    // Helper function to normalize bank names for comparison
+    const normalizeBankName = (name: string) => {
+      return normalizeArabicText(name);
+    };
+    
+    // Helper function to check if bank names match (flexible comparison)
+    const bankNamesMatch = (name1: string, name2: string) => {
+      const normalized1 = normalizeBankName(name1);
+      const normalized2 = normalizeBankName(name2);
+      
+      // Exact match after normalization
+      if (normalized1 === normalized2) return true;
+      
+      // Check if one contains the other (for partial matches)
+      // This handles cases like "البنك العربي" vs "البنك العربي الإفريقي"
+      if (normalized1.includes(normalized2) || normalized2.includes(normalized1)) {
+        // But only if the shorter name is at least 5 characters (to avoid false matches)
+        const shorter = normalized1.length < normalized2.length ? normalized1 : normalized2;
+        if (shorter.length >= 5) {
+          return true;
+        }
+      }
+      
+      return false;
+    };
+    
+    // City name mapping (English to Arabic and vice versa)
+    const cityNameMap: Record<string, string[]> = {
+      'القاهرة الجديدة': ['new cairo', 'newcairo', 'القاهرة الجديده', 'القاهره الجديدة'],
+      'new cairo': ['القاهرة الجديدة', 'القاهرة الجديده', 'القاهره الجديدة'],
+      'zamalek': ['الزمالك'],
+      'الزمالك': ['zamalek'],
+      'nasr city': ['مدينة نصر', 'مدينه نصر'],
+      'مدينة نصر': ['nasr city', 'nasrcity'],
+      'heliopolis': ['هليوبوليس', 'مصر الجديدة'],
+      'مصر الجديدة': ['heliopolis'],
+      'dokki': ['الدقي'],
+      'الدقي': ['dokki'],
+      'maadi': ['المعادي'],
+      'المعادي': ['maadi'],
+      '6th of october': ['السادس من اكتوبر', 'السادس من أكتوبر', 'حدائق اكتوبر'],
+      'السادس من اكتوبر': ['6th of october', '6th october', 'october 6'],
+      'sheikh zayed': ['الشيخ زايد'],
+      'الشيخ زايد': ['sheikh zayed'],
+    };
+    
+    // Helper function to normalize and match city names
+    const cityNamesMatch = (city1: string, city2: string): boolean => {
+      if (!city1 || !city2) return false;
+      
+      const normalized1 = city1.trim().toLowerCase();
+      const normalized2 = city2.trim().toLowerCase();
+      
+      // Exact match
+      if (normalized1 === normalized2) return true;
+      
+      // Check mapping
+      const variants1 = cityNameMap[normalized1] || [];
+      const variants2 = cityNameMap[normalized2] || [];
+      
+      // Check if one is a variant of the other
+      if (variants1.includes(normalized2) || variants2.includes(normalized1)) {
+        return true;
+      }
+      
+      // Check if normalized2 is in variants1 or vice versa
+      if (variants1.some(v => v.toLowerCase() === normalized2)) return true;
+      if (variants2.some(v => v.toLowerCase() === normalized1)) return true;
+      
+      return false;
+    };
+    
+    console.log('🔍 Filtering ATMs:', {
       selectedCityName,
       selectedBankName,
       totalAtms: atms.length,
@@ -208,33 +298,76 @@ export default function WorkPlanPage() {
     });
     
     if (!selectedBankName) {
-      const cityAtms = atms.filter(atm => atm.city === selectedCityName);
-      console.log('ATMs for city (no bank filter):', cityAtms.length);
+      const cityAtms = atms.filter(atm => cityNamesMatch(atm.city || '', selectedCityName));
+      console.log('📍 ATMs for city (no bank filter):', cityAtms.length);
       return cityAtms;
     }
     
-    const normalizedSelectedBank = normalizeBankName(selectedBankName);
+    // Count matches for debugging
+    let cityMatchCount = 0;
+    let bankMatchCount = 0;
+    let bothMatchCount = 0;
+    
     const filtered = atms.filter(atm => {
-      const matchesCity = atm.city === selectedCityName;
-      const normalizedAtmBank = normalizeBankName(atm.bankName || '');
-      const matchesBank = normalizedAtmBank === normalizedSelectedBank;
+      const matchesCity = cityNamesMatch(atm.city || '', selectedCityName);
+      const matchesBank = bankNamesMatch(atm.bankName || '', selectedBankName);
+      
+      if (matchesCity) cityMatchCount++;
+      if (matchesBank) bankMatchCount++;
+      if (matchesCity && matchesBank) bothMatchCount++;
       
       if (matchesCity && !matchesBank) {
-        console.log('Bank name mismatch:', {
-          expected: normalizedSelectedBank,
-          actual: normalizedAtmBank,
-          atmCode: atm.atmCode
+        console.log('⚠️ Bank name mismatch:', {
+          expected: selectedBankName,
+          actual: atm.bankName,
+          atmCode: atm.atmCode,
+          city: atm.city,
+          selectedCity: selectedCityName
+        });
+      }
+      
+      if (!matchesCity && matchesBank) {
+        console.log('⚠️ City name mismatch:', {
+          expected: selectedCityName,
+          actual: atm.city,
+          atmCode: atm.atmCode,
+          bank: atm.bankName
         });
       }
       
       return matchesCity && matchesBank;
     });
     
-    console.log('Filtered ATMs (with bank):', {
-      count: filtered.length,
-      bankName: normalizedSelectedBank,
-      sampleAtms: filtered.slice(0, 3).map(a => ({ code: a.atmCode, bank: a.bankName }))
+    console.log('✅ Filtered ATMs (with bank):', {
+      totalAtmsInDB: atms.length,
+      cityMatches: cityMatchCount,
+      bankMatches: bankMatchCount,
+      bothMatches: bothMatchCount,
+      finalFilteredCount: filtered.length,
+      bankName: selectedBankName,
+      city: selectedCityName,
+      allFilteredCodes: filtered.map(a => a.atmCode),
+      sampleAtms: filtered.slice(0, 10).map(a => ({ 
+        code: a.atmCode, 
+        bank: a.bankName,
+        city: a.city 
+      }))
     });
+    
+    // If no results, show all ATMs in the city for debugging
+    if (filtered.length === 0 && selectedCityName) {
+      const cityAtms = atms.filter(atm => cityNamesMatch(atm.city || '', selectedCityName));
+      const allCityAtms = atms.filter(atm => atm.city);
+      const uniqueCities = Array.from(new Set(allCityAtms.map(a => a.city)));
+      
+      console.log('🔍 Debug: All ATMs in city (for comparison):', {
+        selectedCity: selectedCityName,
+        matchedCount: cityAtms.length,
+        banks: Array.from(new Set(cityAtms.map(a => a.bankName))),
+        allUniqueCities: uniqueCities.slice(0, 10),
+        sampleCityNames: allCityAtms.slice(0, 5).map(a => ({ code: a.atmCode, city: a.city }))
+      });
+    }
     
     return filtered;
   }, [selectedCityName, selectedBank, atms, banks]);
@@ -251,7 +384,7 @@ export default function WorkPlanPage() {
     enableRowSelection: true,
     initialState: {
       pagination: {
-        pageSize: 5,
+        pageSize: 50, // Increased from 5 to 50 to show more ATMs per page
       }
     }
   });
@@ -274,10 +407,25 @@ export default function WorkPlanPage() {
   const fetchRepresentatives = React.useCallback(async () => {
     try {
       const response = await fetch('/api/representatives');
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
       const data = await response.json();
-      setRepresentatives(data);
+      // Ensure data is an array
+      if (Array.isArray(data)) {
+        setRepresentatives(data);
+      } else {
+        console.error('Representatives API returned non-array:', data);
+        setRepresentatives([]);
+        toast({
+          title: "تحذير",
+          description: "بيانات المندوبين غير صحيحة",
+          variant: "destructive",
+        });
+      }
     } catch (error) {
       console.error('Error fetching representatives:', error);
+      setRepresentatives([]); // Set to empty array on error
       toast({
         title: "خطأ",
         description: "حدث خطأ أثناء تحميل بيانات المندوبين",
@@ -664,20 +812,56 @@ export default function WorkPlanPage() {
     
     const staticCities = selectedGovernorate?.cities.map(c => c.nameAr) || [];
     
+    // Helper function to normalize Arabic text (handle ي/ى and other variations)
+    const normalizeArabicText = (text: string): string => {
+      if (!text) return '';
+      let normalized = text
+        .trim()
+        .replace(/\s+/g, ' ')
+        .toLowerCase();
+      
+      // Normalize Arabic characters: convert ي to ى at end of words
+      normalized = normalized.replace(/ي(\s|$)/g, 'ى$1');
+      
+      // Also handle other common variations
+      normalized = normalized
+        .replace(/أ/g, 'ا')
+        .replace(/إ/g, 'ا')
+        .replace(/آ/g, 'ا');
+      
+      return normalized;
+    };
+    
     // Helper function to normalize bank names for comparison
     const normalizeBankName = (name: string) => {
-      return name?.trim().replace(/\s+/g, ' ') || '';
+      return normalizeArabicText(name);
+    };
+    
+    // Helper function to check if bank names match (flexible comparison)
+    const bankNamesMatch = (name1: string, name2: string) => {
+      const normalized1 = normalizeBankName(name1);
+      const normalized2 = normalizeBankName(name2);
+      
+      if (normalized1 === normalized2) return true;
+      
+      // Check if one contains the other (for partial matches)
+      if (normalized1.includes(normalized2) || normalized2.includes(normalized1)) {
+        const shorter = normalized1.length < normalized2.length ? normalized1 : normalized2;
+        if (shorter.length >= 5) {
+          return true;
+        }
+      }
+      
+      return false;
     };
     
     const selectedBankName = banks.find(b => b.id === selectedBank)?.nameAr?.trim() || '';
-    const normalizedSelectedBank = normalizeBankName(selectedBankName);
     
     const atmCities = selectedBankName 
       ? atms
           .filter(atm => {
             const matchesGovernorate = atm.governorate === selectedGovernorate?.nameAr;
-            const normalizedAtmBank = normalizeBankName(atm.bankName || '');
-            const matchesBank = normalizedAtmBank === normalizedSelectedBank;
+            const matchesBank = bankNamesMatch(atm.bankName || '', selectedBankName);
             return matchesGovernorate && matchesBank;
           })
           .map(atm => atm.city)
@@ -789,6 +973,9 @@ export default function WorkPlanPage() {
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{planToEdit ? 'تعديل خطة' : 'إضافة خطة'}</DialogTitle>
+            <DialogDescription>
+              {planToEdit ? 'قم بتعديل تفاصيل الخطة أدناه' : 'املأ النموذج أدناه لإضافة خطة عمل جديدة'}
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -904,11 +1091,15 @@ export default function WorkPlanPage() {
                     <SelectValue placeholder="أختار المندوب" />
                   </SelectTrigger>
                   <SelectContent>
-                    {representatives.map((rep) => (
-                      <SelectItem key={rep.id} value={rep.id.toString()}>
-                        {rep.name}
-                      </SelectItem>
-                    ))}
+                    {Array.isArray(representatives) && representatives.length > 0 ? (
+                      representatives.map((rep) => (
+                        <SelectItem key={rep.id} value={rep.id.toString()}>
+                          {rep.name}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="" disabled>لا توجد مندوبين متاحين</SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
               </div>

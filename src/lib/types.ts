@@ -72,13 +72,20 @@ export interface ATMData {
 }
 
 export interface WorkPlan {
-  id: string;
+  id: string | number;
   bankName: string;
   startDate: string;
   endDate: string;
   governorate: string;
   city: string;
   statement: string;
+  representativeId: number;
+  dates: string; // JSON string array
+  atmCodes: string; // JSON string array
+  status?: string;
+  atmReports?: string; // JSON string object
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface City {
