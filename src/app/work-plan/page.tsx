@@ -13,7 +13,7 @@ import {
   useReactTable,
 } from '@tanstack/react-table';
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { format, parseISO } from 'date-fns';
+import { format, parseISO, isValid } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -77,22 +77,6 @@ interface WorkPlanFormData {
 
 const atmColumns: ColumnDef<ATMData>[] = [
   {
-    accessorKey: 'atmModel',
-    header: () => <div className="flex items-center gap-1">موديل المكينة <Filter size={14}/></div>,
-  },
-  {
-    accessorKey: 'atmSerial',
-    header: () => <div className="flex items-center gap-1">سريل المكينة <Filter size={14}/></div>,
-  },
-  {
-    accessorKey: 'atmCode',
-    header: () => <div className="flex items-center gap-1">كود المكينة <Filter size={14}/></div>,
-  },
-  {
-    accessorKey: 'atmAddress',
-    header: () => <div className="flex items-center gap-1">عنوان المكينة <Filter size={14}/></div>,
-  },
-  {
     id: 'select',
     header: ({ table }) => (
       <Checkbox
@@ -108,6 +92,48 @@ const atmColumns: ColumnDef<ATMData>[] = [
         aria-label="Select row"
       />
     ),
+  },
+  {
+    accessorKey: 'bankName',
+    header: () => <div className="flex items-center gap-1">اسم البنك <Filter size={14}/></div>,
+  },
+  {
+    accessorKey: 'startDate',
+    header: () => <div className="flex items-center gap-1">تاريخ البداء <Filter size={14}/></div>,
+    cell: ({ row }) => {
+      const dateValue = row.getValue('startDate') as string;
+      if (!dateValue) return '';
+      try {
+        const parsedDate = parseISO(dateValue);
+        return isValid(parsedDate) ? format(parsedDate, 'dd/MM/yyyy') : dateValue;
+      } catch {
+        return dateValue;
+      }
+    },
+  },
+  {
+    accessorKey: 'governorate',
+    header: () => <div className="flex items-center gap-1">اسم المحافظة <Filter size={14}/></div>,
+  },
+  {
+    accessorKey: 'city',
+    header: () => <div className="flex items-center gap-1">اسم المدينة <Filter size={14}/></div>,
+  },
+  {
+    accessorKey: 'atmModel',
+    header: () => <div className="flex items-center gap-1">موديل المكينة <Filter size={14}/></div>,
+  },
+  {
+    accessorKey: 'atmSerial',
+    header: () => <div className="flex items-center gap-1">سريل المكينة <Filter size={14}/></div>,
+  },
+  {
+    accessorKey: 'atmCode',
+    header: () => <div className="flex items-center gap-1">كود المكينة <Filter size={14}/></div>,
+  },
+  {
+    accessorKey: 'atmAddress',
+    header: () => <div className="flex items-center gap-1">عنوان المكينة <Filter size={14}/></div>,
   },
 ];
 
@@ -170,7 +196,7 @@ export default function WorkPlanPage() {
   const [selectedBank, setSelectedBank] = React.useState('');
   const [startDate, setStartDate] = React.useState<Date>();
   const [endDate, setEndDate] = React.useState<Date>();
-  const [selectedGovernorate, setSelectedGovernorate] = React.useState<Governorate | null>(null);
+  const [selectedGovernorate, setSelectedGovernorate] = React.useState<string>('');
   const [selectedCityName, setSelectedCityName] = React.useState<string>('');
   const [selectedRepresentative, setSelectedRepresentative] = React.useState('');
   const [statement, setStatement] = React.useState('');
@@ -467,7 +493,7 @@ export default function WorkPlanPage() {
       if (!selectedBank) requiredFields.push('البنك');
       if (!startDate) requiredFields.push('تاريخ البداية');
       if (!endDate) requiredFields.push('تاريخ الانتهاء');
-      if (!selectedGovernorate) requiredFields.push('المحافظة');
+      if (!selectedGovernorate || selectedGovernorate.trim() === '') requiredFields.push('المحافظة');
       if (!selectedCityName) requiredFields.push('المدينة');
       if (!statement) requiredFields.push('البيان');
       if (!selectedRepresentative) requiredFields.push('المندوب');
@@ -544,7 +570,7 @@ export default function WorkPlanPage() {
         bankName: bankDetails.nameAr,
         startDate: format(startDate, 'yyyy-MM-dd'),
         endDate: format(endDate, 'yyyy-MM-dd'),
-        governorate: selectedGovernorate.nameAr,
+        governorate: selectedGovernorate || '',
         city: selectedCityName || '',
         statement: statement.trim(),
         representativeId: parseInt(selectedRepresentative),
@@ -611,7 +637,7 @@ export default function WorkPlanPage() {
         setSelectedBank('');
         setStartDate(undefined);
         setEndDate(undefined);
-        setSelectedGovernorate(null);
+        setSelectedGovernorate('');
         setSelectedCityName('');
         setStatement('');
         setSelectedRepresentative('');
@@ -659,12 +685,11 @@ export default function WorkPlanPage() {
     setPlanToEdit(plan);
     
     const bankId = banks.find(b => b.nameAr === plan.bankName)?.id || '';
-    const governorate = governorates.find(g => g.nameAr === plan.governorate) || null;
     
     setSelectedBank(bankId);
     setStartDate(parseISO(plan.startDate));
     setEndDate(parseISO(plan.endDate));
-    setSelectedGovernorate(governorate);
+    setSelectedGovernorate(plan.governorate || '');
     setSelectedCityName(plan.city);
     setStatement(plan.statement);
     setSelectedRepresentative(plan.representativeId.toString());
@@ -689,7 +714,7 @@ export default function WorkPlanPage() {
     }
     
     setIsDialogOpen(true);
-  }, [banks, governorates, filteredAtms]);
+  }, [banks, filteredAtms]);
 
   const openDeleteDialog = React.useCallback((plan: WorkPlan) => {
     setPlanToDelete(plan);
@@ -801,77 +826,61 @@ export default function WorkPlanPage() {
     },
   });
 
-  const handleGovernorateChange = React.useCallback((govId: string) => {
-    const gov = governorates.find(g => g.id === govId) || null;
-    setSelectedGovernorate(gov);
+  // Get all governorates that have ATMs in the database
+  const availableGovernorates = React.useMemo(() => {
+    const uniqueGovernorates = new Set(
+      atms
+        .map(atm => atm.governorate)
+        .filter((gov): gov is string => !!gov && gov.trim() !== '')
+    );
+    return Array.from(uniqueGovernorates).sort();
+  }, [atms]);
+
+  const handleGovernorateChange = React.useCallback((govName: string) => {
+    setSelectedGovernorate(govName);
     setSelectedCityName('');
   }, []);
   
   const availableCities = React.useMemo(() => {
-    if (!selectedGovernorate) return [];
+    if (!selectedGovernorate || selectedGovernorate.trim() === '') return [];
     
-    const staticCities = selectedGovernorate?.cities.map(c => c.nameAr) || [];
+    console.log('🏙️ Getting cities for governorate:', {
+      selectedGovernorate,
+      totalAtms: atms.length,
+      governoratesInDB: Array.from(new Set(atms.map(a => a.governorate))).slice(0, 10)
+    });
     
-    // Helper function to normalize Arabic text (handle ي/ى and other variations)
-    const normalizeArabicText = (text: string): string => {
-      if (!text) return '';
-      let normalized = text
-        .trim()
-        .replace(/\s+/g, ' ')
-        .toLowerCase();
-      
-      // Normalize Arabic characters: convert ي to ى at end of words
-      normalized = normalized.replace(/ي(\s|$)/g, 'ى$1');
-      
-      // Also handle other common variations
-      normalized = normalized
-        .replace(/أ/g, 'ا')
-        .replace(/إ/g, 'ا')
-        .replace(/آ/g, 'ا');
-      
-      return normalized;
-    };
-    
-    // Helper function to normalize bank names for comparison
-    const normalizeBankName = (name: string) => {
-      return normalizeArabicText(name);
-    };
-    
-    // Helper function to check if bank names match (flexible comparison)
-    const bankNamesMatch = (name1: string, name2: string) => {
-      const normalized1 = normalizeBankName(name1);
-      const normalized2 = normalizeBankName(name2);
-      
-      if (normalized1 === normalized2) return true;
-      
-      // Check if one contains the other (for partial matches)
-      if (normalized1.includes(normalized2) || normalized2.includes(normalized1)) {
-        const shorter = normalized1.length < normalized2.length ? normalized1 : normalized2;
-        if (shorter.length >= 5) {
-          return true;
+    // Get all cities that have ATMs in the selected governorate, regardless of bank
+    // This ensures all cities with ATMs appear in the dropdown
+    const atmCities = atms
+      .filter(atm => {
+        // Match governorate name exactly
+        const matchesGovernorate = atm.governorate === selectedGovernorate;
+        if (matchesGovernorate) {
+          console.log('✅ Found ATM in governorate:', {
+            governorate: atm.governorate,
+            city: atm.city,
+            atmCode: atm.atmCode
+          });
         }
-      }
-      
-      return false;
-    };
+        return matchesGovernorate && atm.city && atm.city.trim() !== ''; // Only include ATMs with a valid city name
+      })
+      .map(atm => atm.city)
+      .filter((city): city is string => !!city && city.trim() !== ''); // Filter out null/undefined/empty cities
     
-    const selectedBankName = banks.find(b => b.id === selectedBank)?.nameAr?.trim() || '';
+    // Remove duplicates and sort
+    const uniqueCities = Array.from(new Set(atmCities))
+      .filter((city): city is string => !!city && city.trim() !== '') // Final filter to ensure no empty strings
+      .sort();
     
-    const atmCities = selectedBankName 
-      ? atms
-          .filter(atm => {
-            const matchesGovernorate = atm.governorate === selectedGovernorate?.nameAr;
-            const matchesBank = bankNamesMatch(atm.bankName || '', selectedBankName);
-            return matchesGovernorate && matchesBank;
-          })
-          .map(atm => atm.city)
-      : atms
-          .filter(atm => atm.governorate === selectedGovernorate?.nameAr)
-          .map(atm => atm.city);
+    console.log('📍 Available cities:', {
+      governorate: selectedGovernorate,
+      cities: uniqueCities,
+      count: uniqueCities.length
+    });
     
-    const combined = new Set([...staticCities, ...atmCities]);
-    return Array.from(combined).sort();
-  }, [selectedGovernorate, atms, selectedBank, banks]);
+    return uniqueCities;
+  }, [selectedGovernorate, atms]);
   
   const handleCityChange = React.useCallback((cityName: string) => {
     console.log('City changed to:', cityName);
@@ -962,7 +971,7 @@ export default function WorkPlanPage() {
           setSelectedBank('');
           setStartDate(undefined);
           setEndDate(undefined);
-          setSelectedGovernorate(null);
+          setSelectedGovernorate('');
           setSelectedCityName('');
           setStatement('');
           setSelectedRepresentative('');
@@ -1048,16 +1057,21 @@ export default function WorkPlanPage() {
 
               <div className="grid gap-2">
                 <Label>اسم المحافظة</Label>
-                <Select onValueChange={handleGovernorateChange}>
+                <Select 
+                  value={selectedGovernorate || ''} 
+                  onValueChange={handleGovernorateChange}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="أختار المحافظة" />
                   </SelectTrigger>
                   <SelectContent>
-                    {governorates.map((gov) => (
-                      <SelectItem key={gov.id} value={gov.id}>
-                        {gov.nameAr}
-                      </SelectItem>
-                    ))}
+                    {availableGovernorates
+                      .filter(gov => gov && gov.trim() !== '')
+                      .map((gov) => (
+                        <SelectItem key={gov} value={gov}>
+                          {gov}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -1069,17 +1083,19 @@ export default function WorkPlanPage() {
                 <Select 
                   value={selectedCityName || ''} 
                   onValueChange={handleCityChange}
-                  disabled={!selectedGovernorate}
+                  disabled={!selectedGovernorate || selectedGovernorate.trim() === ''}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="أختار المدينة" />
                   </SelectTrigger>
                   <SelectContent>
-                    {availableCities.map((city) => (
-                      <SelectItem key={city} value={city}>
-                        {city}
-                      </SelectItem>
-                    ))}
+                    {availableCities
+                      .filter(city => city && city.trim() !== '') // Additional safety filter
+                      .map((city) => (
+                        <SelectItem key={city} value={city}>
+                          {city}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -1098,7 +1114,9 @@ export default function WorkPlanPage() {
                         </SelectItem>
                       ))
                     ) : (
-                      <SelectItem value="" disabled>لا توجد مندوبين متاحين</SelectItem>
+                      <div className="px-2 py-1.5 text-sm text-muted-foreground text-center">
+                        لا توجد مندوبين متاحين
+                      </div>
                     )}
                   </SelectContent>
                 </Select>
