@@ -16,6 +16,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
 import {
   Dialog,
   DialogContent,
@@ -31,7 +33,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { MessageCircle, Send, CheckCheck, Image as ImageIcon, ArrowDown, Search, X } from 'lucide-react';
+import { MessageCircle, Send, CheckCheck, Image as ImageIcon, ArrowDown, Search, X, Calendar as CalendarIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 
@@ -831,6 +833,8 @@ export default function ClientReviewPage() {
   const [selectedReportId, setSelectedReportId] = React.useState<string | null>(null);
   const [userType, setUserType] = React.useState<'client' | 'reviewer'>('client');
   const [searchQuery, setSearchQuery] = React.useState('');
+  const [dateFrom, setDateFrom] = React.useState<Date | undefined>(undefined);
+  const [dateTo, setDateTo] = React.useState<Date | undefined>(undefined);
 
   // Fetch work plans from API
   const fetchWorkPlans = React.useCallback(async () => {
@@ -1053,8 +1057,29 @@ export default function ClientReviewPage() {
       );
     }
     
+    // Filter by date range
+    if (dateFrom || dateTo) {
+      filteredData = filteredData.filter(report => {
+        const reportDate = parseISO(report.executionDate);
+        const reportDateOnly = new Date(reportDate.getFullYear(), reportDate.getMonth(), reportDate.getDate());
+        
+        if (dateFrom && dateTo) {
+          const fromDateOnly = new Date(dateFrom.getFullYear(), dateFrom.getMonth(), dateFrom.getDate());
+          const toDateOnly = new Date(dateTo.getFullYear(), dateTo.getMonth(), dateTo.getDate());
+          return reportDateOnly >= fromDateOnly && reportDateOnly <= toDateOnly;
+        } else if (dateFrom) {
+          const fromDateOnly = new Date(dateFrom.getFullYear(), dateFrom.getMonth(), dateFrom.getDate());
+          return reportDateOnly >= fromDateOnly;
+        } else if (dateTo) {
+          const toDateOnly = new Date(dateTo.getFullYear(), dateTo.getMonth(), dateTo.getDate());
+          return reportDateOnly <= toDateOnly;
+        }
+        return true;
+      });
+    }
+    
     return filteredData;
-  }, [data, userType, searchQuery]);
+  }, [data, userType, searchQuery, dateFrom, dateTo]);
 
   const table = useReactTable({
     data: tableData,
@@ -1081,8 +1106,8 @@ export default function ClientReviewPage() {
             </div>
         </div>
 
-        <div className="flex items-center gap-4 mb-4">
-            <div className="relative flex-1 max-w-md md:w-2/3 lg:w-1/3">
+        <div className="flex items-center gap-4 mb-4 flex-wrap">
+            <div className="relative flex-1 max-w-md md:w-2/3 lg:w-1/3 min-w-[200px]">
                 <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                 <Input
                     type="search"
@@ -1102,6 +1127,73 @@ export default function ClientReviewPage() {
                     </button>
                 )}
             </div>
+            
+            <div className="flex items-center gap-2">
+                <Popover>
+                    <PopoverTrigger asChild>
+                        <Button
+                            variant="outline"
+                            className={cn(
+                                "justify-start text-right font-normal",
+                                !dateFrom && "text-muted-foreground"
+                            )}
+                        >
+                            <CalendarIcon className="ml-2 h-4 w-4" />
+                            {dateFrom ? format(dateFrom, "dd/MM/yyyy") : "من تاريخ"}
+                        </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                            mode="single"
+                            selected={dateFrom}
+                            onSelect={setDateFrom}
+                            initialFocus
+                        />
+                    </PopoverContent>
+                </Popover>
+
+                <Popover>
+                    <PopoverTrigger asChild>
+                        <Button
+                            variant="outline"
+                            className={cn(
+                                "justify-start text-right font-normal",
+                                !dateTo && "text-muted-foreground"
+                            )}
+                        >
+                            <CalendarIcon className="ml-2 h-4 w-4" />
+                            {dateTo ? format(dateTo, "dd/MM/yyyy") : "إلى تاريخ"}
+                        </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                            mode="single"
+                            selected={dateTo}
+                            onSelect={setDateTo}
+                            disabled={(date) =>
+                                dateFrom ? date < dateFrom : false
+                            }
+                            initialFocus
+                        />
+                    </PopoverContent>
+                </Popover>
+
+                {(dateFrom || dateTo) && (
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                            setDateFrom(undefined);
+                            setDateTo(undefined);
+                        }}
+                        className="h-9"
+                    >
+                        <X className="h-4 w-4" />
+                        مسح
+                    </Button>
+                )}
+            </div>
+            
             <div className="text-sm text-muted-foreground">
                 عرض {tableData.length} من {data.length} سجل
             </div>
