@@ -45,7 +45,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { PlusCircle, Download, Trash2, Save, ChevronDown, CalendarIcon, Filter, Edit, Search } from 'lucide-react';
+import { PlusCircle, Download, Trash2, Save, ChevronDown, CalendarIcon, Filter, Edit, Search, X } from 'lucide-react';
 import type { WorkPlan, ATMData, Governorate } from '@/lib/types';
 import { banks, governorates } from '@/lib/data';
 import { Label } from '@/components/ui/label';
@@ -55,6 +55,7 @@ import { cn } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 
 interface Representative {
@@ -148,6 +149,8 @@ function DatesMultiSelect({
   startDate?: Date,
   endDate?: Date
 }) {
+  const [isCalendarOpen, setIsCalendarOpen] = React.useState(false);
+  
   const dates = React.useMemo(() => {
     if (!startDate || !endDate) return [];
     const dates: string[] = [];
@@ -160,33 +163,199 @@ function DatesMultiSelect({
     }
     return dates;
   }, [startDate, endDate]);
+
+  const selectedDatesAsDate = React.useMemo(() => {
+    return value.map(dateStr => parseISO(dateStr)).filter(d => isValid(d));
+  }, [value]);
+
+  const isDateInRange = (date: Date) => {
+    if (!startDate || !endDate) return false;
+    const dateOnly = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const startOnly = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+    const endOnly = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
+    return dateOnly >= startOnly && dateOnly <= endOnly;
+  };
+
+  const handleCalendarSelect = (dates: Date | Date[] | undefined) => {
+    // react-day-picker in multiple mode returns Date[] or undefined
+    let selectedDatesArray: Date[] = [];
+    
+    if (!dates) {
+      // If dates is undefined, it means user clicked on a selected date to deselect it
+      // We need to handle this differently - we'll keep current selection
+      return;
+    }
+    
+    if (Array.isArray(dates)) {
+      selectedDatesArray = dates;
+    } else if (dates instanceof Date) {
+      // Single date clicked - toggle it
+      const dateStr = format(dates, 'yyyy-MM-dd');
+      if (value.includes(dateStr)) {
+        // Remove if already selected
+        onChange(value.filter(d => d !== dateStr));
+      } else {
+        // Add if not selected
+        onChange([...value, dateStr].sort());
+      }
+      return;
+    }
+
+    // Filter dates to only include those within the allowed range
+    const validDates = selectedDatesArray
+      .filter(date => {
+        if (!startDate || !endDate) return true;
+        const dateOnly = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+        const startOnly = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+        const endOnly = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
+        return dateOnly >= startOnly && dateOnly <= endOnly;
+      })
+      .map(date => format(date, 'yyyy-MM-dd'))
+      .sort();
+
+    onChange(validDates);
+  };
+
+  const clearAll = () => {
+    onChange([]);
+  };
   
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="outline" className="w-full justify-between">
-          <span>{value.length > 0 ? `${value.length} تم الاختيار` : "أختار التواريخ"}</span>
-          <ChevronDown className="h-4 w-4 opacity-50" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent className="w-56 max-h-60 overflow-y-auto">
-        <DropdownMenuLabel>التواريخ المتاحة</DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        {dates.map(date => (
-          <DropdownMenuCheckboxItem
-            key={date}
-            checked={value.includes(date)}
-            onCheckedChange={(checked) => {
-              return checked
-                ? onChange([...value, date])
-                : onChange(value.filter(d => d !== date))
-            }}
-          >
-            {date}
-          </DropdownMenuCheckboxItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <div className="space-y-2">
+      {/* Primary method: Dropdown with checkboxes - more reliable */}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" className="w-full justify-between">
+            <span>
+              {value.length > 0 
+                ? `${value.length} تاريخ محدد` 
+                : "اختر التواريخ"}
+            </span>
+            <ChevronDown className="h-4 w-4 opacity-50" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent className="w-64 max-h-80 overflow-y-auto">
+          <div className="flex items-center justify-between px-2 py-1.5">
+            <DropdownMenuLabel>التواريخ المتاحة</DropdownMenuLabel>
+            {value.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  clearAll();
+                }}
+                className="h-6 px-2 text-xs"
+              >
+                <X className="h-3 w-3 ml-1" />
+                مسح الكل
+              </Button>
+            )}
+          </div>
+          <DropdownMenuSeparator />
+          {dates.length > 0 ? (
+            dates.map(date => (
+              <DropdownMenuCheckboxItem
+                key={date}
+                checked={value.includes(date)}
+                onCheckedChange={(checked) => {
+                  return checked
+                    ? onChange([...value, date].sort())
+                    : onChange(value.filter(d => d !== date))
+                }}
+                className="cursor-pointer"
+              >
+                {format(parseISO(date), 'dd/MM/yyyy')}
+              </DropdownMenuCheckboxItem>
+            ))
+          ) : (
+            <div className="px-2 py-1.5 text-sm text-muted-foreground text-center">
+              يرجى تحديد تاريخ البداية والانتهاء أولاً
+            </div>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      
+      {/* Show selected dates as badges */}
+      {value.length > 0 && (
+        <div className="space-y-1">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-muted-foreground">التواريخ المحددة:</span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={clearAll}
+              className="h-6 px-2 text-xs"
+            >
+              <X className="h-3 w-3 ml-1" />
+              مسح الكل
+            </Button>
+          </div>
+          <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto p-2 border rounded-md bg-muted/30">
+            {value.sort().map(dateStr => {
+              const date = parseISO(dateStr);
+              return (
+                <Badge
+                  key={dateStr}
+                  variant="secondary"
+                  className="cursor-pointer text-xs hover:bg-destructive/20"
+                  onClick={() => onChange(value.filter(d => d !== dateStr))}
+                >
+                  {format(date, 'dd/MM/yyyy')}
+                  <X className="h-3 w-3 mr-1" />
+                </Badge>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      
+      {/* Optional: Calendar view for visual selection */}
+      <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
+        <PopoverTrigger asChild>
+          <Button variant="outline" size="sm" className="w-full justify-between text-xs">
+            <span>أو استخدم التقويم</span>
+            <CalendarIcon className="ml-2 h-3 w-3 opacity-50" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-auto p-0" align="start">
+          <div className="p-3">
+            <Calendar
+              mode="multiple"
+              selected={selectedDatesAsDate}
+              onSelect={(dates) => {
+                // react-day-picker in multiple mode passes Date[] or undefined
+                if (dates && Array.isArray(dates)) {
+                  const validDates = dates
+                    .filter(date => {
+                      if (!startDate || !endDate) return true;
+                      const dateOnly = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+                      const startOnly = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+                      const endOnly = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
+                      return dateOnly >= startOnly && dateOnly <= endOnly;
+                    })
+                    .map(date => format(date, 'yyyy-MM-dd'))
+                    .sort();
+                  onChange(validDates);
+                } else if (!dates) {
+                  // Empty selection
+                  onChange([]);
+                }
+              }}
+              disabled={(date) => !isDateInRange(date)}
+              initialFocus
+              className="rounded-md border-0"
+              modifiersClassNames={{
+                selected: "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground",
+              }}
+            />
+            <div className="mt-2 text-xs text-muted-foreground text-center">
+              💡 انقر على التواريخ لتحديدها أو إلغاء تحديدها
+            </div>
+          </div>
+        </PopoverContent>
+      </Popover>
+    </div>
   )
 }
 
@@ -201,6 +370,7 @@ export default function WorkPlanPage() {
   const [selectedRepresentative, setSelectedRepresentative] = React.useState('');
   const [statement, setStatement] = React.useState('');
   const [selectedDates, setSelectedDates] = React.useState<string[]>([]);
+  const [repeatPlan, setRepeatPlan] = React.useState(false);
 
   const [isDialogOpen, setIsDialogOpen] = React.useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
@@ -566,30 +736,211 @@ export default function WorkPlanPage() {
         return;
       }
 
-      const workPlanData: WorkPlanFormData = {
-        bankName: bankDetails.nameAr,
-        startDate: format(startDate, 'yyyy-MM-dd'),
-        endDate: format(endDate, 'yyyy-MM-dd'),
-        governorate: selectedGovernorate || '',
-        city: selectedCityName || '',
-        statement: statement.trim(),
-        representativeId: parseInt(selectedRepresentative),
-        atmCodes: selectedAtms.map(atm => atm.atmCode),
-        dates: selectedDates,
-        status: 'pending'
-      };
-
       try {
         const isEditing = !!planToEdit;
-        const method = isEditing ? 'PUT' : 'POST';
-        const dataToSend = isEditing ? { ...workPlanData, id: planToEdit.id } : workPlanData;
         
+        // If editing, don't allow repeat
+        if (isEditing) {
+          const workPlanData: WorkPlanFormData = {
+            bankName: bankDetails.nameAr,
+            startDate: format(startDate, 'yyyy-MM-dd'),
+            endDate: format(endDate, 'yyyy-MM-dd'),
+            governorate: selectedGovernorate || '',
+            city: selectedCityName || '',
+            statement: statement.trim(),
+            representativeId: parseInt(selectedRepresentative),
+            atmCodes: selectedAtms.map(atm => atm.atmCode),
+            dates: selectedDates,
+            status: 'pending'
+          };
+
+          const method = 'PUT';
+          const dataToSend = { ...workPlanData, id: planToEdit.id };
+          
+          const response = await fetch('/api/work-plans', {
+            method,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(dataToSend),
+          });
+
+          let responseData;
+          const text = await response.text();
+          
+          try {
+            responseData = text ? JSON.parse(text) : null;
+          } catch (e) {
+            console.error('Failed to parse server response:', { error: e, text });
+            toast({
+              title: 'خطأ في الاستجابة',
+              description: 'فشل في تحليل استجابة الخادم',
+              variant: 'destructive',
+            });
+            return;
+          }
+
+          if (!response.ok) {
+            const errorMessage = responseData?.error || responseData?.message || 'حدث خطأ أثناء تحديث خطة العمل';
+            toast({
+              title: `خطأ ${response.status}`,
+              description: errorMessage,
+              variant: 'destructive',
+            });
+            return;
+          }
+
+          if (!responseData?.id) {
+            toast({
+              title: 'خطأ في البيانات',
+              description: 'البيانات المستلمة من الخادم غير صالحة',
+              variant: 'destructive',
+            });
+            return;
+          }
+
+          await fetchWorkPlans();
+          toast({
+            title: 'تم التحديث',
+            description: 'تم تحديث خطة العمل بنجاح',
+          });
+
+          setIsDialogOpen(false);
+          setPlanToEdit(null);
+          setSelectedBank('');
+          setStartDate(undefined);
+          setEndDate(undefined);
+          setSelectedGovernorate('');
+          setSelectedCityName('');
+          setStatement('');
+          setSelectedRepresentative('');
+          setSelectedDates([]);
+          setRepeatPlan(false);
+          atmTable.toggleAllRowsSelected(false);
+          return;
+        }
+
+        // If repeat is enabled, create a separate plan for each selected date
+        if (repeatPlan && selectedDates.length > 0) {
+          let successCount = 0;
+          let errorCount = 0;
+          const errors: string[] = [];
+
+          // Create a plan for each date
+          for (const dateStr of selectedDates) {
+            const selectedDate = parseISO(dateStr);
+            
+            const workPlanData: WorkPlanFormData = {
+              bankName: bankDetails.nameAr,
+              startDate: format(selectedDate, 'yyyy-MM-dd'),
+              endDate: format(selectedDate, 'yyyy-MM-dd'),
+              governorate: selectedGovernorate || '',
+              city: selectedCityName || '',
+              statement: statement.trim(),
+              representativeId: parseInt(selectedRepresentative),
+              atmCodes: selectedAtms.map(atm => atm.atmCode),
+              dates: [dateStr], // Single date for each repeated plan
+              status: 'pending'
+            };
+
+            try {
+              const response = await fetch('/api/work-plans', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(workPlanData),
+              });
+
+              let responseData;
+              const text = await response.text();
+              
+              try {
+                responseData = text ? JSON.parse(text) : null;
+              } catch (e) {
+                console.error('Failed to parse server response:', { error: e, text });
+                errorCount++;
+                errors.push(`خطأ في تاريخ ${format(selectedDate, 'dd/MM/yyyy')}: فشل في تحليل الاستجابة`);
+                continue;
+              }
+
+              if (!response.ok) {
+                errorCount++;
+                const errorMessage = responseData?.error || responseData?.message || 'حدث خطأ';
+                errors.push(`خطأ في تاريخ ${format(selectedDate, 'dd/MM/yyyy')}: ${errorMessage}`);
+                continue;
+              }
+
+              if (!responseData?.id) {
+                errorCount++;
+                errors.push(`خطأ في تاريخ ${format(selectedDate, 'dd/MM/yyyy')}: البيانات غير صالحة`);
+                continue;
+              }
+
+              successCount++;
+            } catch (error) {
+              errorCount++;
+              errors.push(`خطأ في تاريخ ${format(selectedDate, 'dd/MM/yyyy')}: ${error instanceof Error ? error.message : 'خطأ غير معروف'}`);
+            }
+          }
+
+          await fetchWorkPlans();
+
+          if (successCount > 0 && errorCount === 0) {
+            toast({
+              title: 'تم الإضافة بنجاح',
+              description: `تم إنشاء ${successCount} خطة عمل بنجاح`,
+            });
+          } else if (successCount > 0 && errorCount > 0) {
+            toast({
+              title: 'تم الإضافة جزئياً',
+              description: `تم إنشاء ${successCount} خطة، فشل ${errorCount} خطة. ${errors.slice(0, 3).join('; ')}`,
+              variant: 'destructive',
+            });
+          } else {
+            toast({
+              title: 'فشل الإضافة',
+              description: `فشل إنشاء جميع الخطط. ${errors.slice(0, 3).join('; ')}`,
+              variant: 'destructive',
+            });
+            return;
+          }
+
+          setIsDialogOpen(false);
+          setPlanToEdit(null);
+          setSelectedBank('');
+          setStartDate(undefined);
+          setEndDate(undefined);
+          setSelectedGovernorate('');
+          setSelectedCityName('');
+          setStatement('');
+          setSelectedRepresentative('');
+          setSelectedDates([]);
+          setRepeatPlan(false);
+          atmTable.toggleAllRowsSelected(false);
+          return;
+        }
+
+        // Normal single plan creation (without repeat)
+        const workPlanData: WorkPlanFormData = {
+          bankName: bankDetails.nameAr,
+          startDate: format(startDate, 'yyyy-MM-dd'),
+          endDate: format(endDate, 'yyyy-MM-dd'),
+          governorate: selectedGovernorate || '',
+          city: selectedCityName || '',
+          statement: statement.trim(),
+          representativeId: parseInt(selectedRepresentative),
+          atmCodes: selectedAtms.map(atm => atm.atmCode),
+          dates: selectedDates,
+          status: 'pending'
+        };
+
         const response = await fetch('/api/work-plans', {
-          method,
+          method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify(dataToSend),
+          body: JSON.stringify(workPlanData),
         });
 
         let responseData;
@@ -628,8 +979,8 @@ export default function WorkPlanPage() {
 
         await fetchWorkPlans();
         toast({
-          title: isEditing ? 'تم التحديث' : 'تم الإضافة',
-          description: isEditing ? 'تم تحديث خطة العمل بنجاح' : 'تم إضافة خطة العمل بنجاح',
+          title: 'تم الإضافة',
+          description: 'تم إضافة خطة العمل بنجاح',
         });
 
         setIsDialogOpen(false);
@@ -642,6 +993,7 @@ export default function WorkPlanPage() {
         setStatement('');
         setSelectedRepresentative('');
         setSelectedDates([]);
+        setRepeatPlan(false);
         atmTable.toggleAllRowsSelected(false);
       } catch (error) {
         console.error('Network error:', error);
@@ -678,11 +1030,13 @@ export default function WorkPlanPage() {
     toast,
     fetchWorkPlans,
     atmTable,
-    planToEdit
+    planToEdit,
+    repeatPlan
   ]);
 
   const openEditDialog = React.useCallback((plan: WorkPlan) => {
     setPlanToEdit(plan);
+    setRepeatPlan(false); // Disable repeat when editing
     
     const bankId = banks.find(b => b.nameAr === plan.bankName)?.id || '';
     
@@ -976,6 +1330,7 @@ export default function WorkPlanPage() {
           setStatement('');
           setSelectedRepresentative('');
           setSelectedDates([]);
+          setRepeatPlan(false);
           atmTable.toggleAllRowsSelected(false);
         }
       }}>
@@ -1132,6 +1487,30 @@ export default function WorkPlanPage() {
                 />
               </div>
             </div>
+
+            {!planToEdit && (
+              <div className="flex items-center space-x-2 space-x-reverse p-4 border rounded-md bg-muted/50">
+                <Checkbox
+                  id="repeat-plan"
+                  checked={repeatPlan}
+                  onCheckedChange={(checked) => setRepeatPlan(checked === true)}
+                />
+                <Label
+                  htmlFor="repeat-plan"
+                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                >
+                  تكرار الخطة - إنشاء خطة منفصلة لكل تاريخ محدد
+                </Label>
+              </div>
+            )}
+
+            {repeatPlan && !planToEdit && selectedDates.length > 0 && (
+              <div className="p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-md">
+                <p className="text-sm text-blue-800 dark:text-blue-200">
+                  💡 سيتم إنشاء {selectedDates.length} خطة عمل منفصلة - واحدة لكل تاريخ محدد
+                </p>
+              </div>
+            )}
 
             <div className="grid gap-2">
               <Label>البيان</Label>
