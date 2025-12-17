@@ -100,39 +100,70 @@ function MobileUploadContent() {
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>, type: 'before' | 'after') => {
-    if (e.target.files) {
+    if (e.target.files && workPlan) {
       const files = Array.from(e.target.files);
       
-      // Convert files to base64 for permanent storage
-      const base64Promises = files.map(file => {
-        return new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        });
-      });
-      
       try {
-        const base64Images = await Promise.all(base64Promises);
-        
-        if (type === 'before') {
-          setBeforeImages(prev => [...prev, ...base64Images]);
-        } else {
-          setAfterImages(prev => [...prev, ...base64Images]);
+        // Upload files to server
+        const formData = new FormData();
+        files.forEach(file => {
+          formData.append('files', file);
+        });
+        formData.append('workPlanId', String(workPlan.id));
+        formData.append('atmCode', selectedAtm || '');
+        formData.append('imageType', type);
+
+        const uploadResponse = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!uploadResponse.ok) {
+          const errorData = await uploadResponse.json();
+          throw new Error(errorData.error || 'فشل رفع الصور');
         }
+
+        const uploadResult = await uploadResponse.json();
+        
+        // Add uploaded URLs to the list
+        if (type === 'before') {
+          setBeforeImages(prev => [...prev, ...uploadResult.urls]);
+        } else {
+          setAfterImages(prev => [...prev, ...uploadResult.urls]);
+        }
+        
+        toast({
+          title: 'تم الرفع',
+          description: `تم رفع ${uploadResult.count} صورة بنجاح`,
+        });
       } catch (error) {
-        console.error('Error converting images to base64:', error);
+        console.error('Error uploading images:', error);
         toast({
           variant: 'destructive',
           title: 'خطأ',
-          description: 'فشل تحميل الصور. حاول مرة أخرى.',
+          description: error instanceof Error ? error.message : 'فشل رفع الصور. حاول مرة أخرى.',
         });
       }
     }
   };
 
-  const removeImage = (index: number, type: 'before' | 'after') => {
+  const removeImage = async (index: number, type: 'before' | 'after') => {
+    const currentImages = type === 'before' ? beforeImages : afterImages;
+    const imageToRemove = currentImages[index];
+    
+    // If it's a URL (not base64), delete from server
+    if (imageToRemove && !imageToRemove.startsWith('data:') && (imageToRemove.startsWith('/uploads') || imageToRemove.startsWith('uploads'))) {
+      try {
+        const urlToDelete = imageToRemove.startsWith('/') ? imageToRemove : `/${imageToRemove}`;
+        await fetch(`/api/upload?url=${encodeURIComponent(urlToDelete)}`, {
+          method: 'DELETE',
+        });
+      } catch (error) {
+        console.error('Error deleting image from server:', error);
+        // Continue with removal from UI even if server deletion fails
+      }
+    }
+    
     if (type === 'before') {
       setBeforeImages(prev => prev.filter((_, i) => i !== index));
     } else {
@@ -361,14 +392,21 @@ function MobileUploadContent() {
 
                   {beforeImages.length > 0 && (
                     <div className="grid grid-cols-2 gap-2">
-                      {beforeImages.map((src, index) => (
+                      {beforeImages.map((src, index) => {
+                        const imageSrc = src.startsWith('data:') || src.startsWith('http') || src.startsWith('/') 
+                          ? src 
+                          : src.startsWith('uploads') 
+                            ? `/${src}` 
+                            : src;
+                        return (
                         <div key={index} className="relative group">
                           <Image
-                            src={src}
+                            src={imageSrc}
                             alt={`قبل ${index + 1}`}
                             width={200}
                             height={200}
                             className="rounded-lg object-cover aspect-square w-full"
+                            unoptimized={imageSrc.startsWith('data:')}
                           />
                           <button
                             onClick={() => removeImage(index, 'before')}
@@ -377,7 +415,8 @@ function MobileUploadContent() {
                             <X className="h-4 w-4" />
                           </button>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </TabsContent>
@@ -405,14 +444,21 @@ function MobileUploadContent() {
 
                   {afterImages.length > 0 && (
                     <div className="grid grid-cols-2 gap-2">
-                      {afterImages.map((src, index) => (
+                      {afterImages.map((src, index) => {
+                        const imageSrc = src.startsWith('data:') || src.startsWith('http') || src.startsWith('/') 
+                          ? src 
+                          : src.startsWith('uploads') 
+                            ? `/${src}` 
+                            : src;
+                        return (
                         <div key={index} className="relative group">
                           <Image
-                            src={src}
+                            src={imageSrc}
                             alt={`بعد ${index + 1}`}
                             width={200}
                             height={200}
                             className="rounded-lg object-cover aspect-square w-full"
+                            unoptimized={imageSrc.startsWith('data:')}
                           />
                           <button
                             onClick={() => removeImage(index, 'after')}
@@ -421,7 +467,8 @@ function MobileUploadContent() {
                             <X className="h-4 w-4" />
                           </button>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </TabsContent>

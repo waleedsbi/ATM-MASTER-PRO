@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { getPrisma } from '@/lib/prisma';
 
 // GET: Fetch all comments for a specific work plan and ATM
 export async function GET(request: NextRequest) {
   try {
+    const prisma = getPrisma();
     const { searchParams } = new URL(request.url);
     const workPlanId = searchParams.get('workPlanId');
     const atmCode = searchParams.get('atmCode');
@@ -65,6 +66,7 @@ export async function POST(request: NextRequest) {
   console.log('=== POST /api/client-comments called ===');
   
   try {
+    const prisma = getPrisma();
     const body = await request.json();
     console.log('Request body received:', JSON.stringify(body, null, 2));
     
@@ -120,12 +122,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Normalize imageUrl - ensure it's a string or null
+    const normalizedImageUrl = imageUrl && typeof imageUrl === 'string' && imageUrl.trim() 
+      ? imageUrl.trim() 
+      : null;
+    const normalizedImageType = imageType && typeof imageType === 'string' 
+      ? (imageType === 'before' || imageType === 'after' ? imageType : null)
+      : null;
+
     console.log('All validations passed. Creating comment...');
     console.log('Creating comment with data:', {
       workPlanId: parseInt(workPlanId),
       atmCode,
-      imageUrl: imageUrl ? 'present' : 'none',
-      imageType,
+      imageUrl: normalizedImageUrl ? (normalizedImageUrl.substring(0, 50) + '...') : 'null',
+      imageType: normalizedImageType,
       commentText: commentText.length > 50 ? commentText.substring(0, 50) + '...' : commentText,
       commentBy,
       commentByRole,
@@ -136,8 +146,8 @@ export async function POST(request: NextRequest) {
       data: {
         workPlanId: parseInt(workPlanId),
         atmCode,
-        imageUrl,
-        imageType,
+        imageUrl: normalizedImageUrl,
+        imageType: normalizedImageType,
         commentText,
         commentBy,
         commentByRole,
@@ -171,6 +181,7 @@ export async function POST(request: NextRequest) {
 // PUT: Update a comment (mark as read, change status, etc.)
 export async function PUT(request: NextRequest) {
   try {
+    const prisma = getPrisma();
     const body = await request.json();
     const { id, isRead, status } = body;
 
@@ -194,7 +205,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const comment = await prisma.clientComment.update({
-      where: { id: parseInt(id) },
+      where: { id: parseInt(String(id)) },
       data: updateData,
     });
 
@@ -202,7 +213,10 @@ export async function PUT(request: NextRequest) {
   } catch (error) {
     console.error('Error updating comment:', error);
     return NextResponse.json(
-      { error: 'Failed to update comment' },
+      { 
+        error: 'Failed to update comment',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     );
   }

@@ -61,7 +61,6 @@ import {
 import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import type { Employee } from '@/lib/types';
-import { employees } from '@/lib/data';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
 import { PlusCircle, Upload, Printer, FileDown, CalendarIcon, Save } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -79,7 +78,7 @@ const getAvatarUrl = (avatarId: string) => {
 
 export default function EmployeesPage() {
   const { toast } = useToast();
-  const [data, setData] = React.useState<Employee[]>(employees);
+  const [data, setData] = React.useState<Employee[]>([]);
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] =
@@ -92,6 +91,25 @@ export default function EmployeesPage() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
   const [employeeToDelete, setEmployeeToDelete] = React.useState<Employee | null>(null);
 
+  React.useEffect(() => {
+    // جلب بيانات الموظفين من قاعدة البيانات
+    (async () => {
+      try {
+        const res = await fetch('/api/employees', { cache: 'no-store' });
+        if (res.ok) {
+          const employees = await res.json();
+          if (Array.isArray(employees)) {
+            setData(employees);
+          }
+        } else {
+          console.error('Failed to fetch employees, status:', res.status);
+        }
+      } catch (e) {
+        console.error('Error fetching employees:', e);
+      }
+    })();
+  }, []);
+
   const openDeleteDialog = (employee: Employee) => {
     setEmployeeToDelete(employee);
     setIsDeleteDialogOpen(true);
@@ -99,13 +117,32 @@ export default function EmployeesPage() {
 
   const handleDelete = () => {
     if (employeeToDelete) {
-      setData(data.filter((emp) => emp.id !== employeeToDelete.id));
-      setIsDeleteDialogOpen(false);
-      setEmployeeToDelete(null);
-      toast({
-        title: "تم الحذف",
-        description: `تم حذف الموظف "${employeeToDelete.nameAr}" بنجاح.`,
-      });
+      (async () => {
+        try {
+          const res = await fetch(`/api/employees?id=${employeeToDelete.id}`, {
+            method: 'DELETE',
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(() => null);
+            throw new Error(err?.error || 'فشل حذف الموظف');
+          }
+          setData(prev => prev.filter((emp) => emp.id !== employeeToDelete.id));
+          toast({
+            title: "تم الحذف",
+            description: `تم حذف الموظف "${employeeToDelete.nameAr}" بنجاح.`,
+          });
+        } catch (error) {
+          console.error('Error deleting employee:', error);
+          toast({
+            title: "خطأ",
+            description: error instanceof Error ? error.message : 'حدث خطأ أثناء حذف الموظف',
+            variant: "destructive",
+          });
+        } finally {
+          setIsDeleteDialogOpen(false);
+          setEmployeeToDelete(null);
+        }
+      })();
     }
   };
 

@@ -46,6 +46,42 @@ export default function Representatives() {
   // جلب البيانات عند تحميل الصفحة
   useEffect(() => {
     fetchRepresentatives()
+    
+    // الاستماع لحدث تحديث المندوبين من صفحة الاستيراد
+    const handleRepresentativesUpdate = () => {
+      console.log('🔄 تحديث بيانات المندوبين...');
+      fetchRepresentatives();
+    };
+    
+    // الاستماع لحدث focus لإعادة التحميل
+    const handleFocus = () => {
+      fetchRepresentatives();
+    };
+    
+    // الاستماع لحدث visibility change (عند العودة للصفحة)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchRepresentatives();
+      }
+    };
+    
+    if (typeof window !== 'undefined') {
+      window.addEventListener('representativesUpdated', handleRepresentativesUpdate);
+      window.addEventListener('focus', handleFocus);
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      
+      // Auto-refresh every 30 seconds
+      const interval = setInterval(() => {
+        fetchRepresentatives();
+      }, 30000);
+      
+      return () => {
+        window.removeEventListener('representativesUpdated', handleRepresentativesUpdate);
+        window.removeEventListener('focus', handleFocus);
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+        clearInterval(interval);
+      };
+    }
   }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {

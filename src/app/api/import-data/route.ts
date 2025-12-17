@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { getPrisma } from '@/lib/prisma';
 import * as XLSX from 'xlsx';
 
 export async function POST(request: NextRequest) {
   try {
+    const prisma = getPrisma();
     const formData = await request.formData();
     const file = formData.get('file') as File;
     const type = formData.get('type') as string;
@@ -71,16 +72,16 @@ export async function POST(request: NextRequest) {
     let result;
     switch (type) {
       case 'atms':
-        result = await importATMs(rawData);
+        result = await importATMs(rawData, prisma);
         break;
       case 'representatives':
-        result = await importRepresentatives(rawData);
+        result = await importRepresentatives(rawData, prisma);
         break;
       case 'banks':
-        result = await importBanks(rawData);
+        result = await importBanks(rawData, prisma);
         break;
       case 'governorates':
-        result = await importGovernorates(rawData);
+        result = await importGovernorates(rawData, prisma);
         break;
       default:
         return NextResponse.json({ error: 'نوع بيانات غير مدعوم' }, { status: 400 });
@@ -100,7 +101,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function importATMs(rawData: any[]) {
+async function importATMs(rawData: any[], prisma: ReturnType<typeof getPrisma>) {
   let successCount = 0;
   let errorCount = 0;
   let skippedCount = 0;
@@ -140,15 +141,32 @@ async function importATMs(rawData: any[]) {
       let uniqueAtmCode = cleanAtmCode;
       if (serialNumber && serialNumber !== 'N/A' && serialNumber !== '') {
         // Check if this exact atmCode already exists in DB
-        const existingWithSameCode = await prisma.aTM.findUnique({
-          where: { atmCode: cleanAtmCode }
-        });
+        let existingWithSameCode = null;
+        if (prisma.aTM) {
+          existingWithSameCode = await prisma.aTM.findUnique({
+            where: { atmCode: cleanAtmCode }
+          });
+        } else if (prisma.bankATM) {
+          existingWithSameCode = await prisma.bankATM.findFirst({
+            where: { 
+              ATMCode: cleanAtmCode,
+              IsDeleted: false
+            }
+          });
+        }
         
-        if (existingWithSameCode && existingWithSameCode.atmSerial !== serialNumber) {
+        if (existingWithSameCode && (existingWithSameCode.atmSerial || existingWithSameCode.ATMSerial) !== serialNumber) {
           // This is a different machine with same code - use serial as part of code
           uniqueAtmCode = `${cleanAtmCode}-${serialNumber}`;
           console.log(`📝 صف ${i + 2}: استخدام ${uniqueAtmCode} بدلاً من ${cleanAtmCode} (مكرر)`);
         }
+      }
+      
+      // Use aTM model if available, otherwise skip (BankATM requires more complex mapping)
+      if (!prisma.aTM) {
+        console.log(`⚠️ صف ${i + 2}: تم تخطي ${uniqueAtmCode} - نموذج ATM غير متاح. يرجى تشغيل: npx prisma db push`);
+        skippedCount++;
+        continue;
       }
       
       const atmData = {
@@ -222,7 +240,7 @@ async function importATMs(rawData: any[]) {
   };
 }
 
-async function importRepresentatives(rawData: any[]) {
+async function importRepresentatives(rawData: any[], prisma: ReturnType<typeof getPrisma>) {
   let successCount = 0;
   let errorCount = 0;
   let skippedCount = 0;
@@ -241,18 +259,56 @@ async function importRepresentatives(rawData: any[]) {
 
       const username = row['Username'] || row['username'] || email.split('@')[0];
 
-      await prisma.representative.upsert({
-        where: { email: String(email).trim().toLowerCase() },
-        update: {
-          name: String(name).trim(),
-          username: String(username).trim(),
-        },
-        create: {
-          name: String(name).trim(),
-          username: String(username).trim(),
-          email: String(email).trim().toLowerCase(),
-        },
-      });
+      // Use representative model if available, fallback to delegateData
+      if (prisma.representative) {
+        // Check if representative exists by email
+        const existingRep = await prisma.representative.findFirst({
+          where: { 
+            email: String(email).trim().toLowerCase() 
+          }
+        });
+        
+        if (existingRep) {
+          // Update existing
+          await prisma.representative.update({
+            where: { id: existingRep.id },
+            data: {
+              name: String(name).trim(),
+              username: String(username).trim(),
+            },
+          });
+        } else {
+          // Create new
+          await prisma.representative.create({
+            data: {
+              name: String(name).trim(),
+              username: String(username).trim(),
+              email: String(email).trim().toLowerCase(),
+            },
+          });
+        }
+      } else if (prisma.delegateData) {
+        // Fallback: use DelegateData (requires different structure)
+        const delegateName = String(name).trim();
+        await prisma.delegateData.upsert({
+          where: { DelegateEmail: String(email).trim().toLowerCase() },
+          update: {
+            DelegateNameL1: delegateName,
+            DelegateNameL2: delegateName,
+          },
+          create: {
+            DelegateNameL1: delegateName,
+            DelegateNameL2: delegateName,
+            DelegateEmail: String(email).trim().toLowerCase(),
+            Isdeleted: false,
+            IsNotactive: false,
+          },
+        });
+      } else {
+        console.warn(`⚠️ صف ${i + 2}: تم تخطي ${name} - نموذج Representative غير متاح`);
+        skippedCount++;
+        continue;
+      }
 
       successCount++;
     } catch (error) {
@@ -264,44 +320,74 @@ async function importRepresentatives(rawData: any[]) {
   return { success: successCount, failed: errorCount, skipped: skippedCount, total: rawData.length, errors: errors.slice(0, 10) };
 }
 
-async function importBanks(rawData: any[]) {
+async function importBanks(rawData: any[], prisma: ReturnType<typeof getPrisma>) {
   let successCount = 0;
   let errorCount = 0;
   let skippedCount = 0;
+  let updatedCount = 0;
   const errors: string[] = [];
 
   for (let i = 0; i < rawData.length; i++) {
     const row = rawData[i];
     try {
-      const name = row['Name'] || row['name'] || row['الاسم'];
+      const nameAr = row['Name'] || row['name'] || row['الاسم'] || row['nameAr'];
+      const nameEn = row['NameEn'] || row['nameEn'] || row['الاسم بالإنجليزية'];
+      const location = row['Location'] || row['location'] || row['الموقع'] || '';
+      const contact = row['Contact'] || row['contact'] || row['الاتصال'] || row['Phone'] || row['phone'] || '';
       
-      if (!name) {
+      if (!nameAr) {
         skippedCount++;
         continue;
       }
 
-      const location = row['Location'] || row['location'] || row['الموقع'] || 'غير محدد';
-      const contact = row['Contact'] || row['contact'] || row['الاتصال'] || 'غير محدد';
-
-      await prisma.bank.create({
-        data: {
-          name: String(name).trim(),
-          location: String(location).trim(),
-          contact: String(contact).trim(),
-        },
+      // Check if bank exists by nameAr
+      const existingBank = await prisma.bank.findFirst({
+        where: { 
+          nameAr: String(nameAr).trim()
+        }
       });
-
-      successCount++;
+      
+      if (existingBank) {
+        // Update existing bank
+        await prisma.bank.update({
+          where: { id: existingBank.id },
+          data: {
+            nameEn: nameEn ? String(nameEn).trim() : undefined,
+            governorate: location ? String(location).trim() : undefined,
+            phone: contact ? String(contact).trim() : undefined,
+          },
+        });
+        updatedCount++;
+      } else {
+        // Create new bank
+        await prisma.bank.create({
+          data: {
+            nameAr: String(nameAr).trim(),
+            nameEn: nameEn ? String(nameEn).trim() : undefined,
+            governorate: location ? String(location).trim() : undefined,
+            phone: contact ? String(contact).trim() : undefined,
+          },
+        });
+        successCount++;
+      }
     } catch (error) {
       errorCount++;
       errors.push(`صف ${i + 2}: ${error instanceof Error ? error.message : 'خطأ'}`);
     }
   }
 
-  return { success: successCount, failed: errorCount, skipped: skippedCount, total: rawData.length, errors: errors.slice(0, 10) };
+  return { 
+    success: successCount, 
+    updated: updatedCount,
+    failed: errorCount, 
+    skipped: skippedCount, 
+    total: rawData.length, 
+    errors: errors.slice(0, 10),
+    message: `تم إضافة ${successCount} بنك وتحديث ${updatedCount} بنك`
+  };
 }
 
-async function importGovernorates(rawData: any[]) {
+async function importGovernorates(rawData: any[], prisma: ReturnType<typeof getPrisma>) {
   let successCount = 0;
   let errorCount = 0;
   let skippedCount = 0;

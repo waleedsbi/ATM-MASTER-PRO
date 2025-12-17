@@ -38,24 +38,62 @@ import {
   Search,
 } from 'lucide-react';
 import type { WorkPlanReport, WorkPlanReportStatus } from '@/lib/types';
-import { workPlanReports, governorates } from '@/lib/data';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import Image from 'next/image';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 
 export default function BankPlanReportPage() {
-  const [data, setData] = React.useState<WorkPlanReport[]>(workPlanReports);
+  const [data, setData] = React.useState<WorkPlanReport[]>([]);
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
   const { toast } = useToast();
 
-  const handleStatusChange = (id: string, status: WorkPlanReportStatus) => {
-    setData(currentData => currentData.map(item => item.id === id ? { ...item, status } : item));
-    toast({
+  React.useEffect(() => {
+    // جلب التقارير من قاعدة البيانات عبر API
+    (async () => {
+      try {
+        const res = await fetch('/api/bank-plan-report', { cache: 'no-store' });
+        if (res.ok) {
+          const reports = await res.json();
+          if (Array.isArray(reports)) {
+            setData(reports);
+          }
+        } else {
+          console.error('Failed to fetch bank plan reports, status:', res.status);
+        }
+      } catch (e) {
+        console.error('Error fetching bank plan reports:', e);
+      }
+    })();
+  }, []);
+
+  const handleStatusChange = async (id: string, status: WorkPlanReportStatus) => {
+    try {
+      const res = await fetch('/api/bank-plan-report', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, status }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.error || 'فشل تحديث الحالة');
+      }
+      setData(currentData =>
+        currentData.map(item => item.id === id ? { ...item, status } : item),
+      );
+      toast({
         title: `تم تحديث الحالة`,
         description: `تم تغيير حالة التقرير إلى "${status}".`,
-    })
+      });
+    } catch (error) {
+      console.error('Error updating bank plan report status:', error);
+      toast({
+        title: 'خطأ',
+        description: error instanceof Error ? error.message : 'حدث خطأ أثناء تحديث الحالة',
+        variant: 'destructive',
+      });
+    }
   };
 
   const statusVariant: { [key in WorkPlanReportStatus]: 'default' | 'secondary' | 'destructive' } = {
@@ -205,16 +243,12 @@ export default function BankPlanReportPage() {
     <div className="w-full p-4 md:p-8">
       <div className="flex flex-col gap-4">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {/* يمكن لاحقًا ربط هذه الفلاتر بالمحافظات/المدن من قاعدة البيانات عند الحاجة */}
           <Select>
             <SelectTrigger suppressHydrationWarning>
               <SelectValue placeholder="أختار المحافظة" />
             </SelectTrigger>
             <SelectContent>
-              {governorates.map((gov) => (
-                <SelectItem key={gov.id} value={gov.nameAr}>
-                  {gov.nameAr}
-                </SelectItem>
-              ))}
             </SelectContent>
           </Select>
           <Select>
@@ -222,13 +256,6 @@ export default function BankPlanReportPage() {
               <SelectValue placeholder="أختار المدينة" />
             </SelectTrigger>
             <SelectContent>
-              {governorates
-                .flatMap((g) => g.cities)
-                .map((city) => (
-                  <SelectItem key={city.id} value={city.nameAr}>
-                    {city.nameAr}
-                  </SelectItem>
-                ))}
             </SelectContent>
           </Select>
           <Select onValueChange={(value) => table.getColumn('status')?.setFilterValue(value === 'all' ? '' : value)}>

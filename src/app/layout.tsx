@@ -1,9 +1,7 @@
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
-import { AppShell } from '@/components/layout/app-shell';
-import { Toaster } from '@/components/ui/toaster';
-import { AuthProvider } from '@/contexts/AuthContext';
+import { AuthProviderWrapper } from '@/components/providers/auth-provider-wrapper';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
@@ -11,6 +9,11 @@ export const metadata: Metadata = {
   title: 'ATM Master Pro',
   description: 'إدارة أسطول أجهزة الصراف الآلي بسهولة وذكاء.',
 };
+
+// Force dynamic rendering to avoid prerendering issues with AuthProvider
+// Note: This doesn't prevent Next.js from trying to prerender error pages
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 export default function RootLayout({
   children,
@@ -47,8 +50,8 @@ export default function RootLayout({
         <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet" />
         <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet" />
         <link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;500&display=swap" rel="stylesheet" />
-         <style>
-          {`
+        <style dangerouslySetInnerHTML={{
+          __html: `
             @media print {
               @page {
                 size: A4;
@@ -62,16 +65,11 @@ export default function RootLayout({
                 display: none !important;
               }
             }
-          `}
-        </style>
+          `
+        }} />
       </head>
-      <body className="font-body antialiased" suppressHydrationWarning>
-        <AuthProvider>
-          <div className="printable-area">
-              <AppShell>{children}</AppShell>
-          </div>
-          <Toaster />
-        </AuthProvider>
+      <body className={`${inter.variable} font-body antialiased`} suppressHydrationWarning>
+        <AuthProviderWrapper>{children}</AuthProviderWrapper>
       </body>
     </html>
   );

@@ -45,19 +45,11 @@ import {
 import { Label } from '@/components/ui/label';
 import { PlusCircle, Download, Trash2, Save, Filter, Pencil } from 'lucide-react';
 import type { City } from '@/lib/types';
-import { governorates } from '@/lib/data';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { useToast } from '@/hooks/use-toast';
 
 type CityRow = City & { governorateName: string };
-
-const allCities: CityRow[] = governorates.flatMap(gov => 
-    gov.cities.map(city => ({
-        ...city,
-        governorateName: gov.nameAr,
-    }))
-);
 
 function FilterComponent({ column }: { column: Column<CityRow, unknown> }) {
     const [filterValue, setFilterValue] = React.useState((column.getFilterValue() as string) ?? '');
@@ -90,7 +82,7 @@ function FilterComponent({ column }: { column: Column<CityRow, unknown> }) {
 
 export default function CityDataPage() {
   const { toast } = useToast();
-  const [data, setData] = React.useState<CityRow[]>(allCities);
+  const [data, setData] = React.useState<CityRow[]>([]);
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
   const [isAddDialogOpen, setIsAddDialogOpen] = React.useState(false);
@@ -104,6 +96,40 @@ export default function CityDataPage() {
     nameAr: '',
     nameEn: '',
   });
+
+  const [governorates, setGovernorates] = React.useState<{ id: string; nameAr: string }[]>([]);
+
+  React.useEffect(() => {
+    // جلب المحافظات والمدن من قاعدة البيانات
+    (async () => {
+      try {
+        const govRes = await fetch('/api/governorates', { cache: 'no-store' });
+        if (govRes.ok) {
+          const govs = await govRes.json();
+          if (Array.isArray(govs)) {
+            setGovernorates(govs.map((g: any) => ({ id: String(g.id), nameAr: g.nameAr })));
+          }
+        }
+
+        const cityRes = await fetch('/api/cities', { cache: 'no-store' });
+        if (cityRes.ok) {
+          const cities = await cityRes.json();
+          if (Array.isArray(cities)) {
+            setData(
+              cities.map((c: any) => ({
+                id: String(c.id),
+                nameAr: c.nameAr,
+                nameEn: c.nameEn,
+                governorateName: c.governorateName || '',
+              })),
+            );
+          }
+        }
+      } catch (e) {
+        console.error('Error fetching cities/governorates:', e);
+      }
+    })();
+  }, []);
 
  const handleSaveRow = () => {
     if (!editingCity || !editingCity.nameAr || !editingCity.nameEn) {
@@ -134,14 +160,11 @@ export default function CityDataPage() {
         });
         return;
     }
-    const selectedGov = governorates.find(g => g.id === newCityData.governorateId);
-    if (!selectedGov) return;
-
     const newCity: CityRow = {
         id: `city-${Date.now()}`,
         nameAr: newCityData.nameAr,
         nameEn: newCityData.nameEn,
-        governorateName: selectedGov.nameAr,
+      governorateName: '',
     };
     
     setData(prev => [newCity, ...prev]);
@@ -234,21 +257,33 @@ const columns: ColumnDef<CityRow>[] = [
 
 
   const uniqueGovernorates = React.useMemo(() => {
-    const govSet = new Set(allCities.map(city => city.governorateName));
+    // استخرج أسماء المحافظات المميزة من بيانات المدن المحمّلة من قاعدة البيانات
+    const govSet = new Set(
+      data
+        .map((city) => city.governorateName)
+        .filter((name) => name && name.trim() !== ''),
+    );
     return Array.from(govSet);
-  }, []);
+  }, [data]);
   
   const citiesInSelectedGovernorate = React.useMemo(() => {
-    const selectedGovernorateFilter = columnFilters.find(f => f.id === 'governorateName');
-    const selectedGovernorate = selectedGovernorateFilter ? selectedGovernorateFilter.value as string : '';
+    const selectedGovernorateFilter = columnFilters.find(
+      (f) => f.id === 'governorateName',
+    );
+    const selectedGovernorate =
+      (selectedGovernorateFilter?.value as string) || '';
 
-    if (!selectedGovernorate) {
-        const uniqueCities = new Set(allCities.map(c => c.nameAr));
-        return Array.from(uniqueCities);
-    }
-    const citySet = new Set(allCities.filter(c => c.governorateName === selectedGovernorate).map(city => city.nameAr));
+    const source = selectedGovernorate
+      ? data.filter((c) => c.governorateName === selectedGovernorate)
+      : data;
+
+    const citySet = new Set(
+      source
+        .map((c) => c.nameAr)
+        .filter((name) => name && name.trim() !== ''),
+    );
     return Array.from(citySet);
-}, [columnFilters]);
+  }, [data, columnFilters]);
 
 
   const table = useReactTable({

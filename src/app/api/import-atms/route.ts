@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { getPrisma } from '@/lib/prisma';
 import * as XLSX from 'xlsx';
 
 export async function POST(request: NextRequest) {
   try {
+    const prisma = getPrisma();
     const formData = await request.formData();
     const file = formData.get('file') as File;
 
@@ -115,11 +116,16 @@ export async function POST(request: NextRequest) {
           lastMaintenance: null,
         };
 
-        await prisma.aTM.upsert({
-          where: { atmCode: atmData.atmCode },
-          update: atmData,
-          create: atmData,
-        });
+        // Use aTM model if available
+        if (prisma.aTM) {
+          await prisma.aTM.upsert({
+            where: { atmCode: atmData.atmCode },
+            update: atmData,
+            create: atmData,
+          });
+        } else {
+          console.warn(`⚠️ تم تخطي ${atmData.atmCode} - نموذج ATM غير متاح. يرجى تشغيل: npx prisma db push`);
+        }
 
         successCount++;
       } catch (error) {

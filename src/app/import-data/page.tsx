@@ -129,6 +129,24 @@ export default function ImportDataPage() {
       }
 
       setResult(data);
+      
+      // إرسال إشارة لإعادة تحميل البيانات في الصفحات الأخرى
+      if (response.ok) {
+        if (typeof window !== 'undefined') {
+          if (selectedType === 'representatives') {
+            // إرسال custom event لإعادة تحميل بيانات المندوبين
+            window.dispatchEvent(new CustomEvent('representativesUpdated'));
+          } else if (selectedType === 'banks') {
+            // إرسال custom event لإعادة تحميل بيانات البنوك
+            window.dispatchEvent(new CustomEvent('banksUpdated'));
+          } else if (selectedType === 'atms') {
+            // إرسال custom event لإعادة تحميل بيانات الماكينات
+            window.dispatchEvent(new CustomEvent('atmsUpdated'));
+          }
+          // إرسال إشارة للوحة التحكم دائماً
+          window.dispatchEvent(new CustomEvent('dashboardRefresh'));
+        }
+      }
     } catch (error) {
       console.error('Import error:', error);
       alert(error instanceof Error ? error.message : 'حدث خطأ أثناء الاستيراد');

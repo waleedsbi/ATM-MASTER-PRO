@@ -36,6 +36,8 @@ import {
 } from 'recharts';
 import React, { useState, useEffect } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useAuth } from '@/contexts/AuthContext';
+import { useRouter } from 'next/navigation';
 
 const COLORS = ['hsl(var(--chart-1))', 'hsl(var(--chart-2))', 'hsl(var(--chart-3))', 'hsl(var(--chart-4))'];
 
@@ -53,12 +55,79 @@ interface DashboardStats {
 }
 
 export default function DashboardPage() {
+  const { user, isLoading: authLoading } = useAuth();
+  const router = useRouter();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
+  // إعادة التوجيه إلى صفحة تسجيل الدخول إذا لم يكن المستخدم مسجل دخول
+  // لكن ننتظر قليلاً للسماح بمزامنة cookie من localStorage
   useEffect(() => {
+    if (!authLoading) {
+      // إذا لم يكن هناك user في context، تحقق من localStorage
+      if (!user && typeof window !== 'undefined') {
+        const storedUser = localStorage.getItem('user');
+        if (storedUser) {
+          try {
+            // يوجد user في localStorage، تحقق من cookie
+            const parsedUser = JSON.parse(storedUser);
+            const cookies = document.cookie.split(';');
+            const userCookie = cookies.find(c => c.trim().startsWith('user='));
+            
+            // إذا كان cookie مفقوداً، انتظر قليلاً لمزامنة cookie من AuthContext
+            if (!userCookie) {
+              // انتظر لمزامنة cookie (AuthContext يقوم بذلك تلقائياً)
+              const timer = setTimeout(() => {
+                // تحقق مرة أخرى - إذا كان user لا يزال غير موجود بعد مزامنة cookie
+                // فهذا يعني أن هناك مشكلة، أعد التوجيه
+                const checkUser = localStorage.getItem('user');
+                if (!checkUser) {
+                  router.replace('/login');
+                }
+                // إذا كان user موجود في localStorage، دع AuthContext يتعامل معه
+              }, 1000); // انتظر ثانية واحدة لمزامنة cookie
+              return () => clearTimeout(timer);
+            } else {
+              // Cookie موجود، لكن user غير موجود في context
+              // هذا قد يعني أن هناك مشكلة في AuthContext، أعد التوجيه بعد قليل
+              const timer = setTimeout(() => {
+                if (!user) {
+                  router.replace('/login');
+                }
+              }, 500);
+              return () => clearTimeout(timer);
+            }
+          } catch (error) {
+            // خطأ في parsing، أعد التوجيه
+            router.replace('/login');
+          }
+        } else {
+          // لا يوجد user في localStorage، أعد التوجيه فوراً
+          router.replace('/login');
+        }
+      } else if (!user) {
+        // لا يوجد user ولا localStorage، أعد التوجيه
+        router.replace('/login');
+      }
+    }
+  }, [user, authLoading, router]);
+
+  // إعادة توجيه العميل إلى صفحة المراجعة تلقائياً
+  useEffect(() => {
+    if (!authLoading && user && user.role === 'CLIENT') {
+      router.replace('/client-review');
+      return;
+    }
+  }, [user, authLoading, router]);
+
+  useEffect(() => {
+    // لا نحمل البيانات إذا كان المستخدم غير مسجل دخول أو عميل
+    if (!user || user?.role === 'CLIENT') {
+      return;
+    }
+    
     fetchDashboardStats();
     
     // Auto-refresh every 30 seconds
@@ -71,17 +140,34 @@ export default function DashboardPage() {
       fetchDashboardStats(false);
     };
     
+    // الاستماع لحدث تحديث البيانات من صفحة الاستيراد
+    const handleDashboardRefresh = () => {
+      console.log('🔄 تحديث لوحة التحكم...');
+      fetchDashboardStats(false);
+    };
+    
+    // الاستماع لحدث visibility change (عند العودة للصفحة)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchDashboardStats(false);
+      }
+    };
+    
     if (typeof window !== 'undefined') {
       window.addEventListener('focus', handleFocus);
+      window.addEventListener('dashboardRefresh', handleDashboardRefresh);
+      document.addEventListener('visibilitychange', handleVisibilityChange);
     }
 
     return () => {
       clearInterval(interval);
       if (typeof window !== 'undefined') {
         window.removeEventListener('focus', handleFocus);
+        window.removeEventListener('dashboardRefresh', handleDashboardRefresh);
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
       }
     };
-  }, []);
+  }, [user]);
 
   const fetchDashboardStats = async (showLoading: boolean = true) => {
     try {
@@ -92,8 +178,9 @@ export default function DashboardPage() {
       }
       
       // Use the dashboard API for better performance
+      // Use cache with revalidation for better performance
       const response = await fetch('/api/dashboard', {
-        cache: 'no-store'
+        next: { revalidate: 30 } // Cache for 30 seconds
       });
       
       if (!response.ok) {
@@ -160,6 +247,33 @@ export default function DashboardPage() {
     { name: 'قيد التنفيذ', value: stats.inProgressWorkPlans },
     { name: 'معلق', value: stats.pendingWorkPlans },
   ].filter(item => item.value > 0) : [];
+
+  // عرض شاشة التحميل أثناء التحقق من المصادقة
+  if (authLoading || !user) {
+    return (
+      <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
+        <div className="flex items-center justify-between space-y-2">
+          <h2 className="text-3xl font-bold tracking-tight font-headline">
+            لوحة التحكم
+          </h2>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          {[...Array(8)].map((_, i) => (
+            <Card key={i}>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-4 w-4 rounded-full" />
+              </CardHeader>
+              <CardContent>
+                <Skeleton className="h-8 w-16 mb-2" />
+                <Skeleton className="h-3 w-32" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

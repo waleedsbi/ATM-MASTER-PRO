@@ -45,9 +45,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { PlusCircle, Download, Trash2, Save, ChevronDown, CalendarIcon, Filter, Edit, Search, X } from 'lucide-react';
-import type { WorkPlan, ATMData, Governorate } from '@/lib/types';
-import { banks, governorates } from '@/lib/data';
+import { PlusCircle, Download, Trash2, Save, ChevronDown, CalendarIcon, Filter, Edit, Search, X, Check } from 'lucide-react';
+import type { WorkPlan, ATMData } from '@/lib/types';
 import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
@@ -70,7 +69,7 @@ interface WorkPlanFormData {
   governorate: string;
   city: string;
   statement: string;
-  representativeId: number;
+  representativeId: string | number; // Can be GUID string or number
   atmCodes: string[];
   dates: string[];
   status?: string;
@@ -374,8 +373,10 @@ export default function WorkPlanPage() {
 
   const [isDialogOpen, setIsDialogOpen] = React.useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
+  const [isDeleteAllDialogOpen, setIsDeleteAllDialogOpen] = React.useState(false);
   const [planToDelete, setPlanToDelete] = React.useState<WorkPlan | null>(null);
   const [planToEdit, setPlanToEdit] = React.useState<WorkPlan | null>(null);
+  const [isDeletingAll, setIsDeletingAll] = React.useState(false);
   
   const [data, setData] = React.useState<WorkPlan[]>([]);
   const [representatives, setRepresentatives] = React.useState<Representative[]>([]);
@@ -383,13 +384,26 @@ export default function WorkPlanPage() {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
   const [rowSelection, setRowSelection] = React.useState({});
+  const [pagination, setPagination] = React.useState({
+    pageIndex: 0,
+    pageSize: 10,
+  });
+  const [allGovernorates, setAllGovernorates] = React.useState<string[]>([]);
+  const [allCities, setAllCities] = React.useState<string[]>([]);
+  
+  // Filter states
+  const [filterBank, setFilterBank] = React.useState<string>('');
+  const [filterGovernorate, setFilterGovernorate] = React.useState<string>('');
+  const [filterCity, setFilterCity] = React.useState<string>('');
+  const [filterStatement, setFilterStatement] = React.useState<string>('');
+  const [filterDateFrom, setFilterDateFrom] = React.useState<Date>();
+  const [filterDateTo, setFilterDateTo] = React.useState<Date>();
+  const [isFilterOpen, setIsFilterOpen] = React.useState(false);
 
   const filteredAtms = React.useMemo(() => {
     if (!selectedCityName) return [];
     
-    const selectedBankName = selectedBank 
-      ? banks.find(b => b.id === selectedBank)?.nameAr?.trim() 
-      : '';
+    const selectedBankName = selectedBank || '';
     
     // Helper function to normalize Arabic text (handle ي/ى and other variations)
     const normalizeArabicText = (text: string): string => {
@@ -566,7 +580,7 @@ export default function WorkPlanPage() {
     }
     
     return filtered;
-  }, [selectedCityName, selectedBank, atms, banks]);
+  }, [selectedCityName, selectedBank, atms]);
 
   const atmTable = useReactTable({
     data: filteredAtms,
@@ -655,6 +669,21 @@ export default function WorkPlanPage() {
     fetchWorkPlans();
     fetchRepresentatives();
     fetchAtms();
+    
+    // Fetch governorates from database
+    (async () => {
+      try {
+        const res = await fetch('/api/governorates', { cache: 'no-store' });
+        if (res.ok) {
+          const governorates = await res.json();
+          if (Array.isArray(governorates)) {
+            setAllGovernorates(governorates);
+          }
+        }
+      } catch (e) {
+        console.error('Error fetching governorates:', e);
+      }
+    })();
   }, [fetchWorkPlans, fetchRepresentatives, fetchAtms]);
 
   const handleSubmit = React.useCallback(async () => {
@@ -717,16 +746,6 @@ export default function WorkPlanPage() {
         return;
       }
 
-      const bankDetails = banks.find(b => b.id === selectedBank);
-      if (!bankDetails) {
-        toast({
-          title: 'خطأ',
-          description: 'البنك غير موجود',
-          variant: 'destructive',
-        });
-        return;
-      }
-
       if (!selectedGovernorate) {
         toast({
           title: 'خطأ',
@@ -742,13 +761,13 @@ export default function WorkPlanPage() {
         // If editing, don't allow repeat
         if (isEditing) {
           const workPlanData: WorkPlanFormData = {
-            bankName: bankDetails.nameAr,
+            bankName: selectedBank,
             startDate: format(startDate, 'yyyy-MM-dd'),
             endDate: format(endDate, 'yyyy-MM-dd'),
             governorate: selectedGovernorate || '',
             city: selectedCityName || '',
             statement: statement.trim(),
-            representativeId: parseInt(selectedRepresentative),
+            representativeId: selectedRepresentative, // Keep as string (GUID), API will handle conversion
             atmCodes: selectedAtms.map(atm => atm.atmCode),
             dates: selectedDates,
             status: 'pending'
@@ -831,13 +850,13 @@ export default function WorkPlanPage() {
             const selectedDate = parseISO(dateStr);
             
             const workPlanData: WorkPlanFormData = {
-              bankName: bankDetails.nameAr,
+              bankName: selectedBank,
               startDate: format(selectedDate, 'yyyy-MM-dd'),
               endDate: format(selectedDate, 'yyyy-MM-dd'),
               governorate: selectedGovernorate || '',
               city: selectedCityName || '',
               statement: statement.trim(),
-              representativeId: parseInt(selectedRepresentative),
+              representativeId: selectedRepresentative, // Keep as string (GUID), API will handle conversion
               atmCodes: selectedAtms.map(atm => atm.atmCode),
               dates: [dateStr], // Single date for each repeated plan
               status: 'pending'
@@ -923,13 +942,13 @@ export default function WorkPlanPage() {
 
         // Normal single plan creation (without repeat)
         const workPlanData: WorkPlanFormData = {
-          bankName: bankDetails.nameAr,
+          bankName: selectedBank,
           startDate: format(startDate, 'yyyy-MM-dd'),
           endDate: format(endDate, 'yyyy-MM-dd'),
           governorate: selectedGovernorate || '',
           city: selectedCityName || '',
           statement: statement.trim(),
-          representativeId: parseInt(selectedRepresentative),
+          representativeId: selectedRepresentative, // Keep as string (GUID), API will handle conversion
           atmCodes: selectedAtms.map(atm => atm.atmCode),
           dates: selectedDates,
           status: 'pending'
@@ -1026,7 +1045,6 @@ export default function WorkPlanPage() {
     selectedDates,
     rowSelection,
     filteredAtms,
-    banks,
     toast,
     fetchWorkPlans,
     atmTable,
@@ -1038,9 +1056,7 @@ export default function WorkPlanPage() {
     setPlanToEdit(plan);
     setRepeatPlan(false); // Disable repeat when editing
     
-    const bankId = banks.find(b => b.nameAr === plan.bankName)?.id || '';
-    
-    setSelectedBank(bankId);
+      setSelectedBank(plan.bankName || '');
     setStartDate(parseISO(plan.startDate));
     setEndDate(parseISO(plan.endDate));
     setSelectedGovernorate(plan.governorate || '');
@@ -1068,7 +1084,7 @@ export default function WorkPlanPage() {
     }
     
     setIsDialogOpen(true);
-  }, [banks, filteredAtms]);
+  }, [filteredAtms]);
 
   const openDeleteDialog = React.useCallback((plan: WorkPlan) => {
     setPlanToDelete(plan);
@@ -1104,6 +1120,110 @@ export default function WorkPlanPage() {
     }
   }, [planToDelete, toast, fetchWorkPlans]);
 
+  const handleDeleteAll = React.useCallback(async () => {
+    setIsDeletingAll(true);
+    try {
+      const response = await fetch('/api/work-plans?deleteAll=true', {
+        method: 'DELETE',
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        await fetchWorkPlans();
+        setIsDeleteAllDialogOpen(false);
+        toast({
+          title: "تم الحذف",
+          description: `تم حذف ${result.deletedCount || 0} خطة عمل بنجاح.`,
+        });
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to delete all work plans');
+      }
+    } catch (error) {
+      console.error('Error deleting all work plans:', error);
+      toast({
+        title: "خطأ",
+        description: error instanceof Error ? error.message : "حدث خطأ أثناء حذف جميع الخطط",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDeletingAll(false);
+    }
+  }, [toast, fetchWorkPlans]);
+
+  // Get unique values for filter dropdowns
+  const uniqueBanks = React.useMemo(() => {
+    // استخرج أسماء البنوك الفعلية من بيانات الـ ATMs أو الخطط
+    const bankNamesFromAtms = new Set(atms.map(atm => atm.bankName).filter(Boolean));
+    const bankNamesFromPlans = new Set(data.map(plan => plan.bankName).filter(Boolean));
+    return Array.from(new Set([...bankNamesFromAtms, ...bankNamesFromPlans])).sort();
+  }, [data, atms]);
+
+  const uniqueGovernoratesInData = React.useMemo(() => {
+    return Array.from(new Set(data.map(plan => plan.governorate).filter(Boolean))).sort();
+  }, [data]);
+
+  const uniqueCitiesInData = React.useMemo(() => {
+    return Array.from(new Set(data.map(plan => plan.city).filter(Boolean))).sort();
+  }, [data]);
+
+  // Filter data based on all filter criteria
+  const filteredData = React.useMemo(() => {
+    let filtered = [...data];
+
+    // Filter by bank
+    if (filterBank) {
+      filtered = filtered.filter(plan => plan.bankName === filterBank);
+    }
+
+    // Filter by governorate
+    if (filterGovernorate) {
+      filtered = filtered.filter(plan => plan.governorate === filterGovernorate);
+    }
+
+    // Filter by city
+    if (filterCity) {
+      filtered = filtered.filter(plan => plan.city === filterCity);
+    }
+
+    // Filter by statement (text search)
+    if (filterStatement) {
+      const searchTerm = filterStatement.toLowerCase().trim();
+      filtered = filtered.filter(plan => 
+        plan.statement?.toLowerCase().includes(searchTerm)
+      );
+    }
+
+    // Filter by date range
+    if (filterDateFrom) {
+      filtered = filtered.filter(plan => {
+        try {
+          const planDate = parseISO(plan.startDate);
+          const filterDate = new Date(filterDateFrom);
+          filterDate.setHours(0, 0, 0, 0);
+          return planDate >= filterDate;
+        } catch {
+          return true;
+        }
+      });
+    }
+
+    if (filterDateTo) {
+      filtered = filtered.filter(plan => {
+        try {
+          const planDate = parseISO(plan.endDate);
+          const filterDate = new Date(filterDateTo);
+          filterDate.setHours(23, 59, 59, 999);
+          return planDate <= filterDate;
+        } catch {
+          return true;
+        }
+      });
+    }
+
+    return filtered;
+  }, [data, filterBank, filterGovernorate, filterCity, filterStatement, filterDateFrom, filterDateTo]);
+
   const workPlanColumns: ColumnDef<WorkPlan>[] = React.useMemo(() => [
     {
       accessorKey: 'bankName',
@@ -1116,6 +1236,10 @@ export default function WorkPlanPage() {
           <CaretSortIcon className="mr-2 h-4 w-4" />
         </Button>
       ),
+      filterFn: (row, id, value) => {
+        if (!value) return true;
+        return row.getValue(id) === value;
+      },
     },
     {
       accessorKey: 'startDate',
@@ -1130,14 +1254,27 @@ export default function WorkPlanPage() {
     {
       accessorKey: 'governorate',
       header: 'اسم المحافظة',
+      filterFn: (row, id, value) => {
+        if (!value) return true;
+        return row.getValue(id) === value;
+      },
     },
     {
       accessorKey: 'city',
       header: 'اسم المدينة',
+      filterFn: (row, id, value) => {
+        if (!value) return true;
+        return row.getValue(id) === value;
+      },
     },
     {
       accessorKey: 'statement',
       header: 'البيان',
+      filterFn: (row, id, value) => {
+        if (!value) return true;
+        const statement = row.getValue(id) as string;
+        return statement?.toLowerCase().includes(value.toLowerCase());
+      },
     },
     {
       id: 'actions',
@@ -1166,10 +1303,11 @@ export default function WorkPlanPage() {
   ], [openEditDialog, openDeleteDialog]);
 
   const workPlansTable = useReactTable({
-    data,
+    data: filteredData,
     columns: workPlanColumns,
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
+    onPaginationChange: setPagination,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
@@ -1177,23 +1315,76 @@ export default function WorkPlanPage() {
     state: {
       sorting,
       columnFilters,
+      pagination,
+    },
+    initialState: {
+      pagination: {
+        pageSize: 10,
+      },
     },
   });
 
-  // Get all governorates that have ATMs in the database
+  // Clear all filters
+  const clearAllFilters = React.useCallback(() => {
+    setFilterBank('');
+    setFilterGovernorate('');
+    setFilterCity('');
+    setFilterStatement('');
+    setFilterDateFrom(undefined);
+    setFilterDateTo(undefined);
+  }, []);
+
+  // Check if any filter is active
+  const hasActiveFilters = React.useMemo(() => {
+    return !!(
+      filterBank ||
+      filterGovernorate ||
+      filterCity ||
+      filterStatement ||
+      filterDateFrom ||
+      filterDateTo
+    );
+  }, [filterBank, filterGovernorate, filterCity, filterStatement, filterDateFrom, filterDateTo]);
+
+  // Get all governorates - combine from database and from existing ATM data
   const availableGovernorates = React.useMemo(() => {
-    const uniqueGovernorates = new Set(
+    // Get governorates from ATM data
+    const atmGovernorates = new Set(
       atms
         .map(atm => atm.governorate)
         .filter((gov): gov is string => !!gov && gov.trim() !== '')
     );
-    return Array.from(uniqueGovernorates).sort();
-  }, [atms]);
+    
+    // Combine with governorates from database
+    const allGovs = new Set([...allGovernorates, ...atmGovernorates]);
+    return Array.from(allGovs).sort();
+  }, [atms, allGovernorates]);
 
   const handleGovernorateChange = React.useCallback((govName: string) => {
     setSelectedGovernorate(govName);
     setSelectedCityName('');
   }, []);
+  
+  // Fetch cities when governorate changes
+  React.useEffect(() => {
+    if (selectedGovernorate && selectedGovernorate.trim() !== '') {
+      (async () => {
+        try {
+          const res = await fetch(`/api/cities?governorate=${encodeURIComponent(selectedGovernorate)}`, { cache: 'no-store' });
+          if (res.ok) {
+            const cities = await res.json();
+            if (Array.isArray(cities)) {
+              setAllCities(cities);
+            }
+          }
+        } catch (e) {
+          console.error('Error fetching cities:', e);
+        }
+      })();
+    } else {
+      setAllCities([]);
+    }
+  }, [selectedGovernorate]);
   
   const availableCities = React.useMemo(() => {
     if (!selectedGovernorate || selectedGovernorate.trim() === '') return [];
@@ -1222,19 +1413,24 @@ export default function WorkPlanPage() {
       .map(atm => atm.city)
       .filter((city): city is string => !!city && city.trim() !== ''); // Filter out null/undefined/empty cities
     
+    // Combine with cities from database
+    const allCitySet = new Set([...allCities, ...atmCities]);
+    
     // Remove duplicates and sort
-    const uniqueCities = Array.from(new Set(atmCities))
+    const uniqueCities = Array.from(allCitySet)
       .filter((city): city is string => !!city && city.trim() !== '') // Final filter to ensure no empty strings
       .sort();
     
     console.log('📍 Available cities:', {
       governorate: selectedGovernorate,
       cities: uniqueCities,
-      count: uniqueCities.length
+      count: uniqueCities.length,
+      fromDB: allCities.length,
+      fromATMs: atmCities.length
     });
     
     return uniqueCities;
-  }, [selectedGovernorate, atms]);
+  }, [selectedGovernorate, atms, allCities]);
   
   const handleCityChange = React.useCallback((cityName: string) => {
     console.log('City changed to:', cityName);
@@ -1244,15 +1440,47 @@ export default function WorkPlanPage() {
   return (
     <div className="w-full p-4 md:p-8">
       <div className="flex items-center justify-between mb-4">
-        <div className="relative max-w-sm">
-          <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-          <Input
-            placeholder="بحث في خطط العمل..."
-            onChange={(event) =>
-              workPlansTable.getColumn('bankName')?.setFilterValue(event.target.value)
-            }
-            className="w-full pr-10"
-          />
+        <div className="flex items-center gap-2 flex-1">
+          <div className="relative max-w-sm">
+            <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+            <Input
+              placeholder="بحث في البيان..."
+              value={filterStatement}
+              onChange={(event) => setFilterStatement(event.target.value)}
+              className="w-full pr-10"
+            />
+          </div>
+          <Button
+            variant="outline"
+            onClick={() => setIsFilterOpen(!isFilterOpen)}
+            className={hasActiveFilters ? "bg-blue-50 border-blue-300" : ""}
+          >
+            <Filter className="ml-2 h-4 w-4" />
+            فلتر
+            {hasActiveFilters && (
+              <Badge variant="secondary" className="mr-2 bg-blue-500 text-white">
+                {[
+                  filterBank && 1,
+                  filterGovernorate && 1,
+                  filterCity && 1,
+                  filterStatement && 1,
+                  filterDateFrom && 1,
+                  filterDateTo && 1,
+                ].filter(Boolean).length}
+              </Badge>
+            )}
+          </Button>
+          {hasActiveFilters && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={clearAllFilters}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <X className="ml-1 h-4 w-4" />
+              مسح الفلاتر
+            </Button>
+          )}
         </div>
         <div className="flex gap-2">
           <Button className="bg-orange-500 hover:bg-orange-600 text-white" onClick={() => setIsDialogOpen(true)}>
@@ -1268,8 +1496,202 @@ export default function WorkPlanPage() {
           >
             حالة النظام
           </Button>
+          <Button 
+            variant="outline" 
+            className="bg-red-500 hover:bg-red-600 text-white"
+            onClick={() => setIsDeleteAllDialogOpen(true)}
+            disabled={data.length === 0}
+          >
+            <Trash2 className="ml-2 h-4 w-4" /> حذف الكل
+          </Button>
         </div>
       </div>
+
+      {/* Filter Panel */}
+      {isFilterOpen && (
+        <div className="mb-4 p-4 border rounded-lg bg-muted/30">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold">فلترة البيانات</h3>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={clearAllFilters}
+            >
+              <X className="ml-1 h-4 w-4" />
+              مسح الكل
+            </Button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {/* Bank Filter */}
+            <div className="grid gap-2">
+              <Label>فلترة حسب البنك</Label>
+              <div className="flex gap-2">
+                <Select value={filterBank || undefined} onValueChange={(value) => setFilterBank(value || '')} className="flex-1">
+                  <SelectTrigger>
+                    <SelectValue placeholder="جميع البنوك" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {uniqueBanks.map((bank) => (
+                      <SelectItem key={bank} value={bank}>
+                        {bank}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {filterBank && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setFilterBank('')}
+                    className="h-10 w-10"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            {/* Governorate Filter */}
+            <div className="grid gap-2">
+              <Label>فلترة حسب المحافظة</Label>
+              <div className="flex gap-2">
+                <Select value={filterGovernorate || undefined} onValueChange={(value) => setFilterGovernorate(value || '')} className="flex-1">
+                  <SelectTrigger>
+                    <SelectValue placeholder="جميع المحافظات" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {uniqueGovernoratesInData.map((gov) => (
+                      <SelectItem key={gov} value={gov}>
+                        {gov}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {filterGovernorate && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setFilterGovernorate('')}
+                    className="h-10 w-10"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            {/* City Filter */}
+            <div className="grid gap-2">
+              <Label>فلترة حسب المدينة</Label>
+              <div className="flex gap-2">
+                <Select value={filterCity || undefined} onValueChange={(value) => setFilterCity(value || '')} className="flex-1">
+                  <SelectTrigger>
+                    <SelectValue placeholder="جميع المدن" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {uniqueCitiesInData.map((city) => (
+                      <SelectItem key={city} value={city}>
+                        {city}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {filterCity && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setFilterCity('')}
+                    className="h-10 w-10"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            {/* Date From Filter */}
+            <div className="grid gap-2">
+              <Label>من تاريخ</Label>
+              <div className="flex gap-2">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "flex-1 justify-start text-right font-normal",
+                        !filterDateFrom && "text-muted-foreground"
+                      )}
+                    >
+                      <CalendarIcon className="ml-2 h-4 w-4" />
+                      {filterDateFrom ? format(filterDateFrom, "dd/MM/yyyy") : "اختر التاريخ"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={filterDateFrom}
+                      onSelect={setFilterDateFrom}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+                {filterDateFrom && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setFilterDateFrom(undefined)}
+                    className="h-10 w-10"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            {/* Date To Filter */}
+            <div className="grid gap-2">
+              <Label>إلى تاريخ</Label>
+              <div className="flex gap-2">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "flex-1 justify-start text-right font-normal",
+                        !filterDateTo && "text-muted-foreground"
+                      )}
+                    >
+                      <CalendarIcon className="ml-2 h-4 w-4" />
+                      {filterDateTo ? format(filterDateTo, "dd/MM/yyyy") : "اختر التاريخ"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={filterDateTo}
+                      onSelect={setFilterDateTo}
+                      disabled={(date) =>
+                        filterDateFrom ? date < filterDateFrom : false
+                      }
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+                {filterDateTo && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setFilterDateTo(undefined)}
+                    className="h-10 w-10"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="rounded-md border mt-4">
         <Table>
@@ -1314,7 +1736,26 @@ export default function WorkPlanPage() {
 
       <div className="flex items-center justify-between space-x-2 py-4">
         <div className="flex-1 text-sm text-muted-foreground">
-          صفحة {atmTable.getState().pagination.pageIndex + 1}
+          عرض {workPlansTable.getRowModel().rows.length} من {filteredData.length} خطة عمل
+          {hasActiveFilters && ` (من أصل ${data.length})`}
+        </div>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => workPlansTable.previousPage()}
+            disabled={!workPlansTable.getCanPreviousPage()}
+          >
+            السابق
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => workPlansTable.nextPage()}
+            disabled={!workPlansTable.getCanNextPage()}
+          >
+            التالي
+          </Button>
         </div>
       </div>
 
@@ -1348,8 +1789,8 @@ export default function WorkPlanPage() {
                 <Select value={selectedBank} onValueChange={setSelectedBank}>
                   <SelectTrigger><SelectValue placeholder="أختار البنك" /></SelectTrigger>
                   <SelectContent>
-                    {banks.map((bank) => (
-                      <SelectItem key={bank.id} value={bank.id}>{bank.nameAr}</SelectItem>
+                    {uniqueBanks.map((bankName) => (
+                      <SelectItem key={bankName} value={bankName}>{bankName}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -1557,7 +1998,7 @@ export default function WorkPlanPage() {
                                 ? 'الرجاء اختيار مدينة لعرض الماكينات' 
                                 : atms.length === 0
                                 ? 'لا توجد بيانات ماكينات محملة. يرجى التحقق من قاعدة البيانات.'
-                                : `لا توجد ماكينات للبنك "${banks.find(b => b.id === selectedBank)?.nameAr || 'غير محدد'}" في مدينة "${selectedCityName}"`}
+                                : `لا توجد ماكينات للبنك "${selectedBank || 'غير محدد'}" في مدينة "${selectedCityName}"`}
                             </p>
                             {atms.length > 0 && selectedCityName && (
                               <p className="text-xs text-gray-500">
@@ -1576,7 +2017,7 @@ export default function WorkPlanPage() {
 
           <DialogFooter>
             <Button onClick={handleSubmit} className="bg-orange-500 hover:bg-orange-600 text-white">
-              <Save className="ml-2 h-4 w-4" /> {planToEdit ? 'تحديث' : 'إضافة'}
+              <Check className="ml-2 h-4 w-4" /> {planToEdit ? 'تحديث' : 'إضافة'}
             </Button>
             <DialogClose asChild>
               <Button variant="ghost">إلغاء</Button>
@@ -1597,6 +2038,35 @@ export default function WorkPlanPage() {
             <AlertDialogCancel>إلغاء</AlertDialogCancel>
             <AlertDialogAction onClick={handleDelete} className="bg-destructive hover:bg-destructive/90">
               حذف
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={isDeleteAllDialogOpen} onOpenChange={setIsDeleteAllDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>⚠️ تحذير: حذف جميع خطط العمل</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div>
+                <p>هذا الإجراء لا يمكن التراجع عنه. سيؤدي هذا إلى حذف جميع خطط العمل ({data.length} خطة) بشكل دائم، بما في ذلك:</p>
+                <ul className="list-disc list-inside mt-2 space-y-1">
+                  <li>جميع خطط العمل</li>
+                  <li>جميع التعليقات المرتبطة</li>
+                  <li>جميع الصور المرتبطة</li>
+                </ul>
+                <p className="mt-3 font-semibold text-red-600">هل أنت متأكد تمامًا من رغبتك في المتابعة؟</p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeletingAll}>إلغاء</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleDeleteAll} 
+              className="bg-destructive hover:bg-destructive/90"
+              disabled={isDeletingAll}
+            >
+              {isDeletingAll ? 'جاري الحذف...' : 'حذف الكل'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

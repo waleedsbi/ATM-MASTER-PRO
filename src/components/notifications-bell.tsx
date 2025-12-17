@@ -19,6 +19,8 @@ interface ClientComment {
   id: number;
   workPlanId: number;
   atmCode: string;
+  imageUrl?: string | null;
+  imageType?: string | null;
   commentText: string;
   commentBy: string;
   commentByRole: string;
@@ -43,6 +45,8 @@ export function NotificationBell({ userRole }: { userRole: 'client' | 'reviewer'
   const [lastCount, setLastCount] = React.useState(0);
   const [showAll, setShowAll] = React.useState(false);
   const intervalRef = React.useRef<NodeJS.Timeout | null>(null);
+  const lastCountRef = React.useRef(0); // Use ref to avoid re-renders
+  const showAllRef = React.useRef(showAll); // Use ref to track showAll
 
   const fetchNotifications = React.useCallback(async (showToast = false, includeRead = false) => {
     try {
@@ -60,8 +64,9 @@ export function NotificationBell({ userRole }: { userRole: 'client' | 'reviewer'
         setNotifications(data);
         
         // Show toast notification if there are new unread comments
-        if (data.unreadCount > lastCount && lastCount > 0) {
-          const newCommentsCount = data.unreadCount - lastCount;
+        const currentLastCount = lastCountRef.current;
+        if (data.unreadCount > currentLastCount && currentLastCount > 0) {
+          const newCommentsCount = data.unreadCount - currentLastCount;
           toast({
             title: '📬 إشعار جديد',
             description: `لديك ${newCommentsCount} تعليق جديد`,
@@ -69,6 +74,7 @@ export function NotificationBell({ userRole }: { userRole: 'client' | 'reviewer'
           });
         }
         
+        lastCountRef.current = data.unreadCount;
         setLastCount(data.unreadCount);
         
         if (showToast) {
@@ -92,20 +98,20 @@ export function NotificationBell({ userRole }: { userRole: 'client' | 'reviewer'
     } finally {
       setIsRefreshing(false);
     }
-  }, [userRole, lastCount, toast]);
+  }, [userRole, toast]); // Removed lastCount from dependencies
 
+  // Update ref when showAll changes
   React.useEffect(() => {
-    // Initial fetch
-    fetchNotifications(false, showAll);
+    showAllRef.current = showAll;
   }, [showAll]);
 
   React.useEffect(() => {
     // Initial fetch
-    fetchNotifications();
+    fetchNotifications(false, showAllRef.current);
     
     // Poll for new notifications every 10 seconds (more frequent)
     intervalRef.current = setInterval(() => {
-      fetchNotifications(false, showAll);
+      fetchNotifications(false, showAllRef.current);
     }, 10000);
     
     return () => {
@@ -113,19 +119,21 @@ export function NotificationBell({ userRole }: { userRole: 'client' | 'reviewer'
         clearInterval(intervalRef.current);
       }
     };
-  }, [fetchNotifications, showAll]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showAll]); // Only depend on showAll to restart interval when it changes
 
   // Refresh when window gains focus
   React.useEffect(() => {
     if (typeof window === 'undefined') return;
     
     const handleFocus = () => {
-      fetchNotifications(false, showAll);
+      fetchNotifications(false, showAllRef.current);
     };
     
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
-  }, [fetchNotifications, showAll]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount
 
   const handleMarkAsRead = async (commentId: number) => {
     try {
@@ -159,13 +167,36 @@ export function NotificationBell({ userRole }: { userRole: 'client' | 'reviewer'
     // Close popover
     setOpen(false);
     
-    // Navigate to client review page
-    router.push('/client-review');
+    // Store image info in sessionStorage to avoid URL length issues (HTTP 431)
+    // imageUrl can be very long (base64 encoded images)
+    if (comment.imageUrl && typeof window !== 'undefined') {
+      try {
+        sessionStorage.setItem('targetImageUrl', comment.imageUrl);
+        if (comment.imageType) {
+          sessionStorage.setItem('targetImageType', comment.imageType);
+        }
+      } catch (error) {
+        console.warn('Failed to store image info in sessionStorage:', error);
+      }
+    }
+    
+    // Build query parameters (only essential info, no imageUrl)
+    const params = new URLSearchParams();
+    params.set('workPlanId', String(comment.workPlanId));
+    params.set('atmCode', comment.atmCode);
+    if (comment.id) {
+      params.set('commentId', String(comment.id));
+    }
+    
+    // Navigate to client review page with query parameters
+    router.push(`/client-review?${params.toString()}`);
     
     // Show toast with instructions
     toast({
       title: 'فتح التقرير',
-      description: `ابحث عن المكينة: ${comment.atmCode}`,
+      description: comment.imageUrl 
+        ? `جاري فتح صورة ${comment.imageType === 'before' ? 'قبل' : 'بعد'} للمكينة: ${comment.atmCode}`
+        : `جاري فتح التقرير للمكينة: ${comment.atmCode}`,
       duration: 4000,
     });
   };

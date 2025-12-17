@@ -43,14 +43,14 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { PlusCircle, Download, Trash2, Save, CalendarIcon, Pencil, X, Search } from 'lucide-react';
+import { PlusCircle, Download, Trash2, Save, CalendarIcon, Pencil, X, Search, RefreshCw } from 'lucide-react';
 import type { ATMData } from '@/lib/types';
-import { banks } from '@/lib/data';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
+import { useHasPermission } from '@/hooks/use-permissions';
 
 function DatePicker({ date: initialDate, onSelectDate }: { date?: Date, onSelectDate: (date?: Date) => void }) {
     const [date, setDate] = React.useState<Date | undefined>(initialDate)
@@ -92,6 +92,10 @@ function DatePicker({ date: initialDate, onSelectDate }: { date?: Date, onSelect
 
 export default function AtmDataPage() {
   const { toast } = useToast();
+  const canManageATMs = useHasPermission('canManageATMs');
+  const canAdd = useHasPermission('canAdd');
+  const canEdit = useHasPermission('canEdit');
+  const canDelete = useHasPermission('canDelete');
   const [data, setData] = React.useState<ATMData[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [sorting, setSorting] = React.useState<SortingState>([]);
@@ -105,6 +109,8 @@ export default function AtmDataPage() {
   const [selectedGovernorate, setSelectedGovernorate] = React.useState<string>('all');
   const [selectedCity, setSelectedCity] = React.useState<string>('all');
   const [isMounted, setIsMounted] = React.useState(false);
+  const [allGovernorates, setAllGovernorates] = React.useState<string[]>([]);
+  const [allCities, setAllCities] = React.useState<string[]>([]);
 
   React.useEffect(() => {
     setIsMounted(true);
@@ -112,13 +118,29 @@ export default function AtmDataPage() {
     (async () => {
       try {
         setIsLoading(true);
+        console.log('Fetching ATMs from /api/atms...');
         const res = await fetch('/api/atms', { cache: 'no-store' });
+        console.log('ATMs response status:', res.status);
+        
         if (res.ok) {
           const atms = await res.json();
+          console.log('ATMs received:', {
+            isArray: Array.isArray(atms),
+            length: Array.isArray(atms) ? atms.length : 'N/A',
+            firstItem: Array.isArray(atms) && atms.length > 0 ? atms[0] : 'No data'
+          });
+          
           if (Array.isArray(atms)) {
             setData(atms); // Set data even if empty array
+            if (atms.length === 0) {
+              console.warn('ATMs array is empty - no data to display');
+            }
+          } else {
+            console.error('ATMs response is not an array:', typeof atms);
           }
         } else {
+          const errorText = await res.text();
+          console.error('Failed to fetch ATMs:', res.status, errorText);
           toast({
             title: "خطأ",
             description: "فشل في تحميل بيانات الماكينات",
@@ -136,12 +158,29 @@ export default function AtmDataPage() {
         setIsLoading(false);
       }
     })();
+    
+    // Fetch governorates from database
+    (async () => {
+      try {
+        const res = await fetch('/api/governorates', { cache: 'no-store' });
+        if (res.ok) {
+          const governorates = await res.json();
+          if (Array.isArray(governorates)) {
+            setAllGovernorates(governorates);
+          }
+        }
+      } catch (e) {
+        console.error('Error fetching governorates:', e);
+      }
+    })();
   }, [toast]);
 
   const governorates = React.useMemo(() => {
-    const uniqueGovernorates = new Set(data.map(item => item.governorate).filter(gov => gov));
-    return Array.from(uniqueGovernorates).sort();
-  }, [data]);
+    // Combine governorates from database and from existing ATM data
+    const dataGovernorates = new Set(data.map(item => item.governorate).filter(gov => gov));
+    const allGovs = new Set([...allGovernorates, ...dataGovernorates]);
+    return Array.from(allGovs).sort();
+  }, [data, allGovernorates]);
 
   // Derive banks list from actual data in database
   const banksList = React.useMemo(() => {
@@ -149,15 +188,44 @@ export default function AtmDataPage() {
     return Array.from(uniqueBanks).sort();
   }, [data]);
   
+  // Fetch cities when governorate changes in the form
+  React.useEffect(() => {
+    if (editingRow?.governorate && editingRow.governorate !== 'all') {
+      (async () => {
+        try {
+          const res = await fetch(`/api/cities?governorate=${encodeURIComponent(editingRow.governorate)}`, { cache: 'no-store' });
+          if (res.ok) {
+            const cities = await res.json();
+            if (Array.isArray(cities)) {
+              setAllCities(cities);
+            }
+          }
+        } catch (e) {
+          console.error('Error fetching cities:', e);
+        }
+      })();
+    } else {
+      setAllCities([]);
+    }
+  }, [editingRow?.governorate]);
+
   const cities = React.useMemo(() => {
-      // إذا تم اختيار محافظة، عرض المدن التابعة لها فقط
+      // Combine cities from database and from existing ATM data
       const filteredData = selectedGovernorate === 'all' 
         ? data 
         : data.filter(item => item.governorate === selectedGovernorate);
       
-      const uniqueCities = new Set(filteredData.map(item => item.city).filter(city => city));
-      return Array.from(uniqueCities).sort();
-  }, [data, selectedGovernorate]);
+      const dataCities = new Set(filteredData.map(item => item.city).filter(city => city));
+      
+      // If editing a row and governorate is selected, use cities from database
+      if (editingRow?.governorate && editingRow.governorate !== 'all') {
+        const allCitySet = new Set([...allCities, ...dataCities]);
+        return Array.from(allCitySet).sort();
+      }
+      
+      // Otherwise, use cities from data only
+      return Array.from(dataCities).sort();
+  }, [data, selectedGovernorate, editingRow?.governorate, allCities]);
 
   // Filter data based on selected filters
   const filteredData = React.useMemo(() => {
@@ -169,27 +237,80 @@ export default function AtmDataPage() {
     });
   }, [data, selectedBank, selectedGovernorate, selectedCity]);
 
-  const handleUpdate = () => {
+  const handleUpdate = async () => {
     if (!editingRow) return;
 
-    if (editingRow.id) {
+    // Validate required fields
+    if (!editingRow.atmCode || !editingRow.bankName || !editingRow.governorate || !editingRow.city) {
+      toast({
+        title: "خطأ في التحقق",
+        description: "يرجى ملء جميع الحقول المطلوبة (كود الماكينة، اسم البنك، المحافظة، المدينة)",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      // Save to database via API
+      const response = await fetch('/api/atms', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: editingRow.id,
+          bankName: editingRow.bankName,
+          startDate: editingRow.startDate,
+          governorate: editingRow.governorate,
+          city: editingRow.city,
+          atmModel: editingRow.atmModel,
+          atmSerial: editingRow.atmSerial,
+          atmCode: editingRow.atmCode,
+          atmAddress: editingRow.atmAddress,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'فشل حفظ البيانات');
+      }
+
+      // Update local state
+      if (editingRow.id && editingRow.id !== '') {
         // Update existing row
         setData(prevData => prevData.map(d => d.id === editingRow.id ? editingRow : d));
-         toast({
-            title: "تم التحديث",
-            description: "تم تحديث بيانات الصراف الآلي بنجاح.",
+        toast({
+          title: "تم التحديث",
+          description: result.message || "تم تحديث بيانات الصراف الآلي بنجاح.",
         });
-    } else {
+      } else {
         // Add new row
         const newRowWithId = { ...editingRow, id: `atm-data-${Date.now()}`};
         setData(prevData => [newRowWithId, ...prevData]);
         toast({
-            title: "تم الحفظ",
-            description: `تم حفظ بيانات الصراف الآلي ${newRowWithId.atmCode} بنجاح.`,
+          title: "تم الحفظ",
+          description: result.message || `تم حفظ بيانات الصراف الآلي ${newRowWithId.atmCode} بنجاح.`,
         });
+      }
+
+      // Reload data from server to ensure consistency
+      const refreshResponse = await fetch('/api/atms');
+      if (refreshResponse.ok) {
+        const refreshedData = await refreshResponse.json();
+        setData(refreshedData);
+      }
+
+      setEditingRow(null);
+      setIsNewDialogOpen(false); // Close dialog after saving
+    } catch (error) {
+      console.error('Error saving ATM:', error);
+      toast({
+        title: "خطأ",
+        description: error instanceof Error ? error.message : "حدث خطأ أثناء حفظ بيانات الصراف الآلي",
+        variant: "destructive",
+      });
     }
-    setEditingRow(null);
-    setIsNewDialogOpen(false); // Close dialog after saving
   };
 
   const openDeleteDialog = (row: ATMData) => {
@@ -219,7 +340,7 @@ export default function AtmDataPage() {
   };
 
 
-  const columns: ColumnDef<ATMData>[] = [
+  const columns: ColumnDef<ATMData>[] = React.useMemo(() => [
     {
       accessorKey: 'bankName',
       header: 'اسم البنك',
@@ -261,18 +382,22 @@ export default function AtmDataPage() {
     {
       id: 'actions',
       header: 'تعديل',
-      cell: ({ row }) => (
+      cell: ({ row }: { row: any }) => (
         <div className="flex gap-2">
+          {canEdit && (
             <Button variant="ghost" size="icon" className="text-blue-600 hover:text-blue-700" onClick={() => handleEditClick(row.original)} suppressHydrationWarning>
                 <Pencil className="h-4 w-4" />
             </Button>
-          <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive/80" onClick={() => openDeleteDialog(row.original)} suppressHydrationWarning>
-            <Trash2 className="h-4 w-4" />
-          </Button>
+          )}
+          {canDelete && (
+            <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive/80" onClick={() => openDeleteDialog(row.original)} suppressHydrationWarning>
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          )}
         </div>
       ),
     },
-  ];
+  ], [canEdit, canDelete]);
 
   const table = useReactTable({
     data: filteredData,
@@ -383,9 +508,49 @@ export default function AtmDataPage() {
               />
             </div>
             <div className="flex gap-2">
-                <Button className="bg-orange-500 hover:bg-orange-600 text-white" onClick={handleAddNewClick} suppressHydrationWarning>
-                    <PlusCircle className="ml-2 h-4 w-4" /> إضافة
+                <Button 
+                  variant="outline" 
+                  onClick={async () => {
+                    setIsLoading(true);
+                    try {
+                      const res = await fetch('/api/atms', { cache: 'no-store' });
+                      if (res.ok) {
+                        const atms = await res.json();
+                        if (Array.isArray(atms)) {
+                          setData(atms);
+                          toast({
+                            title: "تم التحديث",
+                            description: `تم تحميل ${atms.length} ماكينة`,
+                          });
+                        }
+                      } else {
+                        toast({
+                          title: "خطأ",
+                          description: "فشل في تحديث البيانات",
+                          variant: "destructive",
+                        });
+                      }
+                    } catch (e) {
+                      console.error('Error refreshing ATMs:', e);
+                      toast({
+                        title: "خطأ",
+                        description: "حدث خطأ أثناء تحديث البيانات",
+                        variant: "destructive",
+                      });
+                    } finally {
+                      setIsLoading(false);
+                    }
+                  }}
+                  disabled={isLoading}
+                  suppressHydrationWarning
+                >
+                  <RefreshCw className={`ml-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} /> تحديث
                 </Button>
+                {canAdd && (
+                  <Button className="bg-orange-500 hover:bg-orange-600 text-white" onClick={handleAddNewClick} suppressHydrationWarning>
+                      <PlusCircle className="ml-2 h-4 w-4" /> إضافة
+                  </Button>
+                )}
                 <Button variant="outline" className="bg-orange-500 hover:bg-orange-600 text-white" suppressHydrationWarning>
                     <Download className="ml-2 h-4 w-4" /> تصدير
                 </Button>
@@ -419,7 +584,10 @@ export default function AtmDataPage() {
               {isLoading ? (
                 <TableRow>
                   <TableCell colSpan={columns.length} className="h-24 text-center">
-                    جاري التحميل...
+                    <div className="flex flex-col items-center gap-2">
+                      <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
+                      <span>جاري التحميل...</span>
+                    </div>
                   </TableCell>
                 </TableRow>
               ) : table.getRowModel().rows?.length ? (
@@ -435,7 +603,19 @@ export default function AtmDataPage() {
               ) : (
                 <TableRow>
                   <TableCell colSpan={columns.length} className="h-24 text-center">
-                    لا توجد بيانات للماكينات.
+                    <div className="flex flex-col items-center gap-2">
+                      <p className="text-muted-foreground">لا توجد بيانات للماكينات.</p>
+                      {data.length === 0 && (
+                        <p className="text-sm text-muted-foreground">
+                          قد تكون قاعدة البيانات فارغة أو لا توجد ماكينات نشطة.
+                        </p>
+                      )}
+                      {data.length > 0 && filteredData.length === 0 && (
+                        <p className="text-sm text-muted-foreground">
+                          لا توجد ماكينات تطابق الفلاتر المحددة.
+                        </p>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               )}
@@ -537,8 +717,8 @@ export default function AtmDataPage() {
                    <Select value={editingRow.bankName} onValueChange={(value) => setEditingRow({...editingRow, bankName: value})}>
                       <SelectTrigger className="col-span-3"><SelectValue placeholder="أختار اسم البنك" /></SelectTrigger>
                       <SelectContent>
-                          {banks.map(bank => (
-                              <SelectItem key={bank.id} value={bank.nameAr}>{bank.nameAr}</SelectItem>
+                          {banksList.map(bankName => (
+                              <SelectItem key={bankName} value={bankName}>{bankName}</SelectItem>
                           ))}
                       </SelectContent>
                   </Select>
@@ -554,7 +734,9 @@ export default function AtmDataPage() {
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="governorate" className="text-right">أختار المحافظة</Label>
-                  <Select value={editingRow.governorate} onValueChange={(value) => setEditingRow({...editingRow, governorate: value})}>
+                  <Select value={editingRow.governorate || ''} onValueChange={(value) => {
+                    setEditingRow({...editingRow, governorate: value, city: ''}); // Reset city when governorate changes
+                  }}>
                       <SelectTrigger className="col-span-3"><SelectValue placeholder="أختار المحافظة" /></SelectTrigger>
                       <SelectContent>
                           {governorates.map(gov => (
@@ -565,12 +747,30 @@ export default function AtmDataPage() {
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="city" className="text-right">أختار المدينة</Label>
-                  <Select value={editingRow.city} onValueChange={(value) => setEditingRow({...editingRow, city: value})}>
-                      <SelectTrigger className="col-span-3"><SelectValue placeholder="أختار المدينة" /></SelectTrigger>
+                  <Select 
+                    value={editingRow.city || ''} 
+                    onValueChange={(value) => setEditingRow({...editingRow, city: value})}
+                    disabled={!editingRow.governorate || editingRow.governorate === 'all' || cities.length === 0}
+                  >
+                      <SelectTrigger className="col-span-3">
+                        <SelectValue placeholder={
+                          !editingRow.governorate || editingRow.governorate === 'all' 
+                            ? "اختر المحافظة أولاً" 
+                            : cities.length === 0 
+                            ? "لا توجد مدن متاحة" 
+                            : "أختار المدينة"
+                        } />
+                      </SelectTrigger>
                       <SelectContent>
-                          {cities.map(city => (
-                            <SelectItem key={city} value={city}>{city}</SelectItem>
-                          ))}
+                          {cities.length > 0 ? (
+                            cities.map(city => (
+                              <SelectItem key={city} value={city}>{city}</SelectItem>
+                            ))
+                          ) : (
+                            <div className="px-2 py-1.5 text-sm text-muted-foreground text-center">
+                              لا توجد مدن متاحة
+                            </div>
+                          )}
                       </SelectContent>
                   </Select>
               </div>

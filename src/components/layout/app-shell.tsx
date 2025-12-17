@@ -1,6 +1,6 @@
 'use client';
 
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   Sidebar,
   SidebarContent,
@@ -24,12 +24,45 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
 import { Cog, Users, Shield, LogOut } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import * as React from 'react';
 import { NotificationBell } from '../notifications-bell';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
+  
+  // Safe useAuth with fallback for SSR
+  let user, logout;
+  try {
+    const auth = useAuth();
+    user = auth.user;
+    logout = auth.logout;
+  } catch (error) {
+    // During SSR/prerendering, useAuth might fail
+    user = null;
+    logout = () => {};
+  }
+  
   const isLoginPage = pathname === '/login';
   const userAvatar = typeof window !== 'undefined' ? PlaceHolderImages.find((img) => img.id === 'avatar1') : null;
+
+  const handleLogout = React.useCallback(() => {
+    console.log('Logging out...');
+    logout();
+    router.push('/login');
+  }, [logout, router]);
+
+  // Get user initials for avatar
+  const userInitials = React.useMemo(() => {
+    if (!user?.name) return 'U';
+    return user.name
+      .split(' ')
+      .map(n => n[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
+  }, [user?.name]);
 
   if (isLoginPage) {
     return <div className="min-h-screen bg-background">{children}</div>;
@@ -62,13 +95,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Button variant="secondary" size="icon" className="rounded-full" suppressHydrationWarning>
                 <Avatar className="h-8 w-8">
                   <AvatarImage src={userAvatar?.imageUrl || ''} alt="User avatar" data-ai-hint={userAvatar?.imageHint || ''} />
-                  <AvatarFallback>U</AvatarFallback>
+                  <AvatarFallback suppressHydrationWarning>{userInitials}</AvatarFallback>
                 </Avatar>
                 <span className="sr-only">تبديل قائمة المستخدم</span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuLabel>حسابي</DropdownMenuLabel>
+              <DropdownMenuLabel suppressHydrationWarning>
+                {user?.name || 'حسابي'}
+              </DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem asChild>
                 <Link href="/profile"><Cog className="ml-2 h-4 w-4"/>الملف الشخصي</Link>
@@ -80,8 +115,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                  <Link href="/roles"><Shield className="ml-2 h-4 w-4"/>الأدوار</Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem asChild>
-                <Link href="/login"><LogOut className="ml-2 h-4 w-4"/>تسجيل الخروج</Link>
+              <DropdownMenuItem onClick={handleLogout}>
+                <LogOut className="ml-2 h-4 w-4"/>
+                تسجيل الخروج
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

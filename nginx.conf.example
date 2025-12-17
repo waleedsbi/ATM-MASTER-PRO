@@ -1,0 +1,50 @@
+# مثال إعدادات Nginx للخادم
+# انسخ هذا الملف إلى /etc/nginx/sites-available/atm-master-pro
+
+server {
+    listen 80;
+    server_name springtradingclean.com www.springtradingclean.com;
+
+    # حجم الرفع الأقصى
+    client_max_body_size 50M;
+
+    # السجلات
+    access_log /var/log/nginx/atm-master-pro-access.log;
+    error_log /var/log/nginx/atm-master-pro-error.log;
+
+    location / {
+        proxy_pass http://localhost:9002;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # مهلة الاتصال
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+
+    # ملفات ثابتة (اختياري - لتحسين الأداء)
+    location /_next/static {
+        proxy_pass http://localhost:9002;
+        proxy_cache_valid 200 60m;
+        add_header Cache-Control "public, immutable";
+    }
+}
+
+# إعدادات HTTPS (بعد إعداد SSL)
+# server {
+#     listen 443 ssl http2;
+#     server_name 95.216.63.80;
+#
+#     ssl_certificate /etc/letsencrypt/live/springtradingclean.com/fullchain.pem;
+#     ssl_certificate_key /etc/letsencrypt/live/springtradingclean.com/privkey.pem;
+#
+#     # باقي الإعدادات مثل server أعلاه
+# }
+

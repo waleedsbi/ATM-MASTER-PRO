@@ -36,7 +36,6 @@ import {
 import { Label } from '@/components/ui/label';
 import { PlusCircle, Download, Trash2, Save, Filter, ChevronDown, ChevronRight, Search } from 'lucide-react';
 import type { Governorate, City } from '@/lib/types';
-import { governorates as initialData } from '@/lib/data';
 
 const cityColumns: ColumnDef<City>[] = [
     {
@@ -99,11 +98,28 @@ const SubTable = ({ cities }: { cities: City[] }) => {
 }
 
 export default function GovernorateDataPage() {
-  const [data, setData] = React.useState<Governorate[]>(initialData);
+  const [data, setData] = React.useState<Governorate[]>([]);
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
   const [rowSelection, setRowSelection] = React.useState({});
   const [expanded, setExpanded] = React.useState<ExpandedState>({});
+
+  React.useEffect(() => {
+    // جلب المحافظات من قاعدة البيانات عبر API
+    (async () => {
+      try {
+        const res = await fetch('/api/governorates', { cache: 'no-store' });
+        if (res.ok) {
+          const govs = await res.json();
+          if (Array.isArray(govs)) {
+            setData(govs);
+          }
+        }
+      } catch (e) {
+        console.error('Error fetching governorates:', e);
+      }
+    })();
+  }, []);
 
   const columns: ColumnDef<Governorate>[] = [
     {

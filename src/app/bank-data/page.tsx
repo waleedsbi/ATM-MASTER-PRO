@@ -60,7 +60,6 @@ import {
 import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import type { Bank } from '@/lib/types';
-import { banks } from '@/lib/data';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
 import { PlusCircle, FileDown, Trash2, Pencil, Save } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -75,7 +74,7 @@ const getLogoUrl = (logoId: string) => {
 
 export default function BanksPage() {
   const { toast } = useToast();
-  const [data, setData] = React.useState<Bank[]>(banks);
+  const [data, setData] = React.useState<Bank[]>([]);
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] =
@@ -98,6 +97,25 @@ export default function BanksPage() {
     logo: null as File | null,
   });
 
+  React.useEffect(() => {
+    // جلب بيانات البنوك من قاعدة البيانات عبر API
+    (async () => {
+      try {
+        const res = await fetch('/api/banks', { cache: 'no-store' });
+        if (res.ok) {
+          const banks = await res.json();
+          if (Array.isArray(banks)) {
+            setData(banks);
+          }
+        } else {
+          console.error('Failed to fetch banks, status:', res.status);
+        }
+      } catch (e) {
+        console.error('Error fetching banks:', e);
+      }
+    })();
+  }, []);
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { id, value } = e.target;
     setNewBank(prev => ({ ...prev, [id]: value }));
@@ -113,7 +131,7 @@ export default function BanksPage() {
     }
   };
 
-  const handleAddBank = (e: React.FormEvent) => {
+  const handleAddBank = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newBank.nameAr) {
         toast({
@@ -123,21 +141,43 @@ export default function BanksPage() {
         });
         return;
     }
-    const newBankData: Bank = {
-        id: `bank-${Date.now()}`,
-        nameAr: newBank.nameAr,
-        nameEn: newBank.nameEn,
-        governorate: newBank.governorate,
-        city: newBank.city,
-        address: newBank.address,
-        mobile: newBank.mobile,
-        logoId: 'avatar' + (Math.floor(Math.random() * 5) + 1), // Placeholder
-    };
-    setData(prev => [newBankData, ...prev]);
-    toast({
+
+    try {
+      const res = await fetch('/api/banks', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          nameAr: newBank.nameAr,
+          nameEn: newBank.nameEn,
+          governorate: newBank.governorate,
+          city: newBank.city,
+          address: newBank.address,
+          mobile: newBank.mobile,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.error || 'فشل حفظ البنك');
+      }
+
+      const created = await res.json();
+      setData(prev => [created, ...prev]);
+      toast({
         title: "تمت الإضافة بنجاح",
         description: `تمت إضافة بنك "${newBank.nameAr}" بنجاح.`,
-    });
+      });
+    } catch (error) {
+      console.error('Error creating bank:', error);
+      toast({
+        variant: "destructive",
+        title: "خطأ",
+        description: error instanceof Error ? error.message : "حدث خطأ أثناء حفظ البنك",
+      });
+      return;
+    }
     setNewBank({
       nameAr: '', nameEn: '', governorate: '', city: '', address: '', mobile: '', phone: '', email: '', statement: '', logo: null
     });
@@ -152,13 +192,32 @@ export default function BanksPage() {
 
   const handleDelete = () => {
     if (bankToDelete) {
-      setData(data.filter((bank) => bank.id !== bankToDelete.id));
-      setIsDeleteDialogOpen(false);
-      toast({
-        title: "تم الحذف",
-        description: `تم حذف بنك "${bankToDelete.nameAr}" بنجاح.`,
-      });
-      setBankToDelete(null);
+      (async () => {
+        try {
+          const res = await fetch(`/api/banks?id=${bankToDelete.id}`, {
+            method: 'DELETE',
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(() => null);
+            throw new Error(err?.error || 'فشل حذف البنك');
+          }
+          setData(prev => prev.filter((bank) => bank.id !== bankToDelete.id));
+          toast({
+            title: "تم الحذف",
+            description: `تم حذف بنك "${bankToDelete.nameAr}" بنجاح.`,
+          });
+        } catch (error) {
+          console.error('Error deleting bank:', error);
+          toast({
+            variant: "destructive",
+            title: "خطأ",
+            description: error instanceof Error ? error.message : "حدث خطأ أثناء حذف البنك",
+          });
+        } finally {
+          setIsDeleteDialogOpen(false);
+          setBankToDelete(null);
+        }
+      })();
     }
   };
   

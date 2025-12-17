@@ -37,10 +37,9 @@ import {
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import type { BankContract } from '@/lib/types';
-import { bankContracts } from '@/lib/data';
 import { PlusCircle, FileDown, Trash2, Pencil, Save, File, Download, CalendarIcon } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { banks } from '@/lib/data';
+import { useToast } from '@/hooks/use-toast';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
@@ -117,12 +116,44 @@ const columns: ColumnDef<BankContract>[] = [
 ];
 
 export default function BankContractsPage() {
-  const [data, setData] = React.useState<BankContract[]>(bankContracts);
+  const { toast } = useToast();
+  const [data, setData] = React.useState<BankContract[]>([]);
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
   const [rowSelection, setRowSelection] = React.useState({});
   const [startDate, setStartDate] = React.useState<Date>();
   const [endDate, setEndDate] = React.useState<Date>();
+  const [banks, setBanks] = React.useState<{ id: number; nameAr: string }[]>([]);
+
+  React.useEffect(() => {
+    // جلب العقود والبنوك من قاعدة البيانات
+    (async () => {
+      try {
+        const [contractsRes, banksRes] = await Promise.all([
+          fetch('/api/bank-contracts', { cache: 'no-store' }),
+          fetch('/api/banks', { cache: 'no-store' }),
+        ]);
+
+        if (contractsRes.ok) {
+          const contracts = await contractsRes.json();
+          if (Array.isArray(contracts)) {
+            setData(contracts);
+          }
+        }
+
+        if (banksRes.ok) {
+          const banksJson = await banksRes.json();
+          if (Array.isArray(banksJson)) {
+            setBanks(
+              banksJson.map((b: any) => ({ id: b.id, nameAr: b.nameAr })),
+            );
+          }
+        }
+      } catch (e) {
+        console.error('Error fetching bank contracts/banks:', e);
+      }
+    })();
+  }, []);
 
   const table = useReactTable({
     data,

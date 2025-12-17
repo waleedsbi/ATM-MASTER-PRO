@@ -71,10 +71,9 @@ export default function UploadLinksPage() {
   };
 
   const getUploadLink = (workPlanId: number) => {
-    if (typeof window !== 'undefined') {
-      return `${window.location.origin}/mobile-upload?workPlanId=${workPlanId}`;
-    }
-    return '';
+    // Use NEXT_PUBLIC_APP_URL if available (for production), otherwise fallback to window.location.origin
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (typeof window !== 'undefined' ? window.location.origin : '');
+    return `${baseUrl}/mobile-upload?workPlanId=${workPlanId}`;
   };
 
   const copyToClipboard = async (workPlanId: number) => {

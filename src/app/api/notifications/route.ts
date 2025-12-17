@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { getPrisma } from '@/lib/prisma';
+import { withTimeout } from '@/lib/query-timeout';
 
 // Disable caching for this route
 export const dynamic = 'force-dynamic';
@@ -8,6 +9,29 @@ export const revalidate = 0;
 // GET: Fetch unread comments count for notifications
 export async function GET(request: NextRequest) {
   try {
+    const prisma = getPrisma()
+    
+    // Check if clientComment model exists
+    if (!prisma.clientComment) {
+      // Return empty notifications if ClientComment model doesn't exist
+      // This can happen if the table hasn't been created yet or is in a different database
+      console.warn('ClientComment model not found in Prisma client. Returning empty notifications.');
+      return NextResponse.json(
+        {
+          unreadCount: 0,
+          recentComments: [],
+          timestamp: new Date().toISOString(),
+        },
+        {
+          headers: {
+            'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0',
+          },
+        }
+      );
+    }
+    
     const { searchParams } = new URL(request.url);
     const userRole = searchParams.get('userRole');
     const showAll = searchParams.get('showAll') === 'true';
@@ -24,45 +48,86 @@ export async function GET(request: NextRequest) {
     // For reviewers, count unread comments from clients
     const oppositeRole = userRole === 'client' ? 'reviewer' : 'client';
 
-    const unreadCount = await prisma.clientComment.count({
-      where: {
-        isRead: false,
-        commentByRole: oppositeRole,
-      },
+    // Use optimized raw SQL queries for better performance
+    // This is faster than Prisma ORM for COUNT and filtered queries
+    // Add timeout to prevent long-running queries
+    const [unreadCountResult, recentComments] = await Promise.all([
+      // Use raw SQL for COUNT - much faster
+      withTimeout(
+        prisma.$queryRaw<Array<{ count: bigint }>>`
+          SELECT COUNT(*) as count 
+          FROM [dbo].[ClientComment] 
+          WHERE [commentByRole] = ${oppositeRole} AND [isRead] = 0
+        `,
+        5000,
+        'Unread count query timeout'
+      ).catch(() => [{ count: BigInt(0) }]),
+      // Use raw SQL for findMany with proper filtering
+      withTimeout(
+        showAll 
+          ? prisma.$queryRaw<Array<{
+              id: number,
+              workPlanId: number,
+              atmCode: string,
+              imageUrl: string | null,
+              imageType: string | null,
+              commentText: string,
+              commentBy: string,
+              commentByRole: string,
+              parentCommentId: number | null,
+              isRead: boolean,
+              status: string,
+              createdAt: Date,
+              updatedAt: Date,
+            }>>`
+              SELECT TOP 20 
+                [id], [workPlanId], [atmCode], [imageUrl], [imageType],
+                [commentText], [commentBy], [commentByRole], [parentCommentId],
+                [isRead], [status], [createdAt], [updatedAt]
+              FROM [dbo].[ClientComment]
+              WHERE [commentByRole] = ${oppositeRole}
+              ORDER BY [createdAt] DESC
+            `
+          : prisma.$queryRaw<Array<{
+              id: number,
+              workPlanId: number,
+              atmCode: string,
+              imageUrl: string | null,
+              imageType: string | null,
+              commentText: string,
+              commentBy: string,
+              commentByRole: string,
+              parentCommentId: number | null,
+              isRead: boolean,
+              status: string,
+              createdAt: Date,
+              updatedAt: Date,
+            }>>`
+              SELECT TOP 20 
+                [id], [workPlanId], [atmCode], [imageUrl], [imageType],
+                [commentText], [commentBy], [commentByRole], [parentCommentId],
+                [isRead], [status], [createdAt], [updatedAt]
+              FROM [dbo].[ClientComment]
+              WHERE [commentByRole] = ${oppositeRole} AND [isRead] = 0
+              ORDER BY [createdAt] DESC
+            `,
+        5000,
+        'Recent comments query timeout'
+      ).catch(() => []),
+    ]);
+
+    const unreadCount = Number(unreadCountResult[0]?.count || 0);
+
+    const response = NextResponse.json({
+      unreadCount,
+      recentComments,
+      timestamp: new Date().toISOString(),
     });
 
-    // Get recent comments (both read and unread if showAll is true)
-    const whereClause: any = {
-      commentByRole: oppositeRole,
-    };
+    // Cache for 10 seconds - الإشعارات تتغير بشكل متكرر
+    response.headers.set('Cache-Control', 'public, s-maxage=10, stale-while-revalidate=20');
 
-    // If not showing all, only show unread
-    if (!showAll) {
-      whereClause.isRead = false;
-    }
-
-    const recentComments = await prisma.clientComment.findMany({
-      where: whereClause,
-      orderBy: {
-        createdAt: 'desc',
-      },
-      take: 20, // Increased to show more comments
-    });
-
-    return NextResponse.json(
-      {
-        unreadCount,
-        recentComments,
-        timestamp: new Date().toISOString(),
-      },
-      {
-        headers: {
-          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-          'Pragma': 'no-cache',
-          'Expires': '0',
-        },
-      }
-    );
+    return response;
   } catch (error) {
     console.error('Error fetching notifications:', error);
     return NextResponse.json(
@@ -75,6 +140,17 @@ export async function GET(request: NextRequest) {
 // POST: Mark notifications as read
 export async function POST(request: NextRequest) {
   try {
+    const prisma = getPrisma()
+    
+    // Check if clientComment model exists
+    if (!prisma.clientComment) {
+      console.warn('ClientComment model not found in Prisma client. Cannot mark comments as read.');
+      return NextResponse.json(
+        { error: 'ClientComment model not available', message: 'Comments feature is not available' },
+        { status: 503 }
+      );
+    }
+    
     const body = await request.json();
     const { commentIds } = body;
 

@@ -1,5 +1,6 @@
 'use client';
 import * as React from 'react';
+import { Suspense } from 'react';
 import {
   ColumnDef,
   flexRender,
@@ -21,6 +22,7 @@ import { Calendar } from '@/components/ui/calendar';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -33,16 +35,48 @@ import { useToast } from '@/hooks/use-toast';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { MessageCircle, Send, CheckCheck, Image as ImageIcon, ArrowDown, Search, X, Calendar as CalendarIcon } from 'lucide-react';
+import { MessageCircle, Send, CheckCheck, Image as ImageIcon, ArrowDown, Search, X, Calendar as CalendarIcon, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
+import { useAuth } from '@/contexts/AuthContext';
+import { useSearchParams } from 'next/navigation';
 
-const FullImageViewer = ({ src }: { src: string; }) => {
+const FullImageViewer = ({ 
+    src,
+    allImages,
+    currentIndex
+}: { 
+    src: string;
+    allImages?: string[];
+    currentIndex?: number;
+}) => {
+    // Support both base64 and URL images
+    const imageSrc = src.startsWith('data:') || src.startsWith('http') || src.startsWith('/') 
+        ? src 
+        : src.startsWith('uploads') 
+            ? `/${src}` 
+            : src;
+    
+    const images = allImages || [src];
+    const initialIndex = currentIndex !== undefined ? currentIndex : (allImages ? allImages.indexOf(src) : 0);
+    const [currentImageIndex, setCurrentImageIndex] = React.useState(initialIndex);
     const [zoom, setZoom] = React.useState(1);
     const [position, setPosition] = React.useState({ x: 0, y: 0 });
     const [isDragging, setIsDragging] = React.useState(false);
     const [dragStart, setDragStart] = React.useState({ x: 0, y: 0 });
     const [open, setOpen] = React.useState(false);
+    
+    // Get current image source
+    const currentImageSrc = images[currentImageIndex] || src;
+    const normalizedCurrentSrc = currentImageSrc.startsWith('data:') || currentImageSrc.startsWith('http') || currentImageSrc.startsWith('/') 
+        ? currentImageSrc 
+        : currentImageSrc.startsWith('uploads') 
+            ? `/${currentImageSrc}` 
+            : currentImageSrc;
+    
+    const hasMultipleImages = images.length > 1;
+    const canGoPrevious = hasMultipleImages && currentImageIndex > 0;
+    const canGoNext = hasMultipleImages && currentImageIndex < images.length - 1;
     
     const handleReset = () => {
         setZoom(1);
@@ -86,23 +120,80 @@ const FullImageViewer = ({ src }: { src: string; }) => {
         setIsDragging(false);
     };
     
-    React.useEffect(() => {
-        if (!open) {
+    const handlePrevious = (e?: React.MouseEvent) => {
+        if (e) e.stopPropagation();
+        if (canGoPrevious) {
+            setCurrentImageIndex(prev => prev - 1);
             handleReset();
         }
-    }, [open]);
+    };
+    
+    const handleNext = (e?: React.MouseEvent) => {
+        if (e) e.stopPropagation();
+        if (canGoNext) {
+            setCurrentImageIndex(prev => prev + 1);
+            handleReset();
+        }
+    };
+    
+    // Update current image index when dialog opens or src changes
+    React.useEffect(() => {
+        if (open && allImages && currentIndex !== undefined) {
+            setCurrentImageIndex(currentIndex);
+            handleReset();
+        } else if (!open) {
+            handleReset();
+        }
+    }, [open, allImages, currentIndex]);
+    
+    // Handle keyboard navigation
+    React.useEffect(() => {
+        if (!open) return;
+        
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'ArrowLeft' && canGoPrevious) {
+                e.preventDefault();
+                setCurrentImageIndex(prev => {
+                    if (prev > 0) {
+                        handleReset();
+                        return prev - 1;
+                    }
+                    return prev;
+                });
+            } else if (e.key === 'ArrowRight' && canGoNext) {
+                e.preventDefault();
+                setCurrentImageIndex(prev => {
+                    if (prev < images.length - 1) {
+                        handleReset();
+                        return prev + 1;
+                    }
+                    return prev;
+                });
+            }
+        };
+        
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [open, canGoPrevious, canGoNext, images.length]);
     
     return (
         <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
                 <div className="relative group cursor-pointer">
-                    <Image src={src} alt="Work Image" width={100} height={100} className="rounded-md object-cover aspect-square" />
+                    <Image src={imageSrc} alt="Work Image" width={100} height={100} className="rounded-md object-cover aspect-square" unoptimized={imageSrc.startsWith('data:')} />
                 </div>
             </DialogTrigger>
             <DialogContent className="max-w-5xl h-[80vh]">
                 <DialogHeader>
                     <DialogTitle className="flex items-center justify-between">
-                        <span>صورة بالحجم الكامل</span>
+                        <span>
+                            صورة بالحجم الكامل
+                            {hasMultipleImages && (
+                                <span className="text-sm text-muted-foreground mr-2">
+                                    ({currentImageIndex + 1} / {images.length})
+                                </span>
+                            )}
+                        </span>
                         <div className="flex items-center gap-2">
                             <Button variant="outline" size="sm" onClick={handleZoomOut} disabled={zoom <= 0.5}>
                                 <span className="text-lg">-</span>
@@ -116,6 +207,10 @@ const FullImageViewer = ({ src }: { src: string; }) => {
                             </Button>
                         </div>
                     </DialogTitle>
+                    <DialogDescription>
+                        استخدم عجلة الفأرة للتكبير/التصغير، واسحب الصورة للتحريك
+                        {hasMultipleImages && ' | استخدم الأسهم للتنقل بين الصور'}
+                    </DialogDescription>
                 </DialogHeader>
                 <div 
                     className="flex-1 flex justify-center items-center overflow-hidden bg-gray-100 dark:bg-gray-900 rounded-md relative"
@@ -126,6 +221,32 @@ const FullImageViewer = ({ src }: { src: string; }) => {
                     onMouseLeave={handleMouseUp}
                     style={{ cursor: isDragging ? 'grabbing' : zoom > 1 ? 'grab' : 'default' }}
                 >
+                    {/* Previous button */}
+                    {hasMultipleImages && canGoPrevious && (
+                        <Button
+                            variant="outline"
+                            size="icon"
+                            className="absolute left-4 z-10 bg-background/80 hover:bg-background shadow-lg"
+                            onClick={handlePrevious}
+                            aria-label="الصورة السابقة"
+                        >
+                            <ChevronLeft className="h-6 w-6" />
+                        </Button>
+                    )}
+                    
+                    {/* Next button */}
+                    {hasMultipleImages && canGoNext && (
+                        <Button
+                            variant="outline"
+                            size="icon"
+                            className="absolute right-4 z-10 bg-background/80 hover:bg-background shadow-lg"
+                            onClick={handleNext}
+                            aria-label="الصورة التالية"
+                        >
+                            <ChevronRight className="h-6 w-6" />
+                        </Button>
+                    )}
+                    
                     <div
                         style={{
                             transform: `translate(${position.x}px, ${position.y}px) scale(${zoom})`,
@@ -133,12 +254,14 @@ const FullImageViewer = ({ src }: { src: string; }) => {
                         }}
                     >
                         <Image 
-                            src={src} 
-                            alt="Full size image" 
+                            key={currentImageIndex}
+                            src={normalizedCurrentSrc} 
+                            alt={`Full size image ${currentImageIndex + 1}`} 
                             width={1200} 
                             height={900} 
                             className="rounded-md object-contain max-h-[60vh] w-auto"
                             draggable={false}
+                            unoptimized={normalizedCurrentSrc.startsWith('data:')}
                         />
                     </div>
                 </div>
@@ -153,17 +276,27 @@ const FullImageViewer = ({ src }: { src: string; }) => {
 function CommentThread({ 
     comment, 
     userType, 
-    onReply 
+    onReply,
+    onConfirmClose
 }: { 
     comment: ClientComment, 
     userType: 'client' | 'reviewer',
-    onReply: (parentId: number, text: string) => void 
+    onReply: (parentId: number, text: string) => void,
+    onConfirmClose?: (commentId: number) => void
 }) {
     const [replyText, setReplyText] = React.useState('');
     const [showReplyBox, setShowReplyBox] = React.useState(false);
     const isOwnComment = 
         (userType === 'client' && comment.commentByRole === 'client') ||
         (userType === 'reviewer' && comment.commentByRole === 'reviewer');
+    
+    // Check if there's a reviewer reply to this comment
+    const hasReviewerReply = comment.replies && comment.replies.some(reply => reply.commentByRole === 'reviewer');
+    const canConfirmClose = userType === 'client' && 
+                             comment.commentByRole === 'client' && 
+                             !comment.parentCommentId && 
+                             hasReviewerReply && 
+                             comment.status !== 'resolved';
 
     const handleReply = () => {
         if (replyText.trim()) {
@@ -215,6 +348,17 @@ function CommentThread({
                                 رد
                             </Button>
                         )}
+                        {canConfirmClose && onConfirmClose && (
+                            <Button 
+                                variant="default" 
+                                size="sm" 
+                                onClick={() => onConfirmClose(comment.id)}
+                                className="h-7 text-xs bg-green-600 hover:bg-green-700"
+                            >
+                                <CheckCheck className="h-3 w-3 ml-1" />
+                                تأكيد وإغلاق
+                            </Button>
+                        )}
                     </div>
                     {showReplyBox && (
                         <div className="mt-3 flex gap-2">
@@ -244,6 +388,7 @@ function CommentThread({
                             comment={reply} 
                             userType={userType}
                             onReply={onReply}
+                            onConfirmClose={onConfirmClose}
                         />
                     ))}
                 </div>
@@ -258,12 +403,16 @@ function ReviewDetailsDialog({
     onOpenChange,
     userType,
     onNoteAdd,
+    targetImageUrl,
+    targetImageType,
 }: { 
     report: WorkPlanReport, 
     open: boolean, 
     onOpenChange: (open: boolean) => void,
     userType: 'client' | 'reviewer',
     onNoteAdd: (reportId: string, note: Note) => void,
+    targetImageUrl?: string | null,
+    targetImageType?: 'before' | 'after' | null,
  }) {
     const { toast } = useToast();
     const [newNote, setNewNote] = React.useState('');
@@ -289,7 +438,7 @@ function ReviewDetailsDialog({
         setShowScrollButton(!isNearBottom && comments.length > 0);
     };
 
-    // Fetch comments when dialog opens
+    // Fetch comments when dialog opens and refresh report data
     React.useEffect(() => {
         if (open) {
             const workPlanId = report.workPlanId || parseInt(report.id.split('-')[0]);
@@ -297,6 +446,8 @@ function ReviewDetailsDialog({
             
             if (workPlanId && atmCode) {
                 fetchComments();
+                // Trigger parent to refresh data to get latest images
+                // This will be handled by the parent component's auto-refresh
             }
         }
     }, [open, report.workPlanId, report.id, report.atmCode]);
@@ -307,6 +458,16 @@ function ReviewDetailsDialog({
             setTimeout(scrollToBottom, 100);
         }
     }, [comments]);
+
+    // Open target image when dialog opens and target image is specified
+    React.useEffect(() => {
+        if (open && targetImageUrl) {
+            // Wait a bit for images to load
+            setTimeout(() => {
+                setSelectedImage({ url: targetImageUrl, type: targetImageType || 'before' });
+            }, 500);
+        }
+    }, [open, targetImageUrl, targetImageType]);
 
     const fetchComments = async () => {
         const workPlanId = report.workPlanId || parseInt(report.id.split('-')[0]);
@@ -379,6 +540,8 @@ function ReviewDetailsDialog({
             workPlanId,
             atmCode,
             hasSelectedImage: !!selectedImage,
+            selectedImageUrl: selectedImage?.url,
+            selectedImageType: selectedImage?.type,
             commentLength: newComment.length
         });
 
@@ -392,23 +555,31 @@ function ReviewDetailsDialog({
             return;
         }
 
+        // Ensure imageUrl is a string if selectedImage exists
+        const imageUrl = selectedImage?.url ? String(selectedImage.url).trim() : null;
+        const imageType = selectedImage?.type || null;
+
         try {
             const requestBody = {
                 workPlanId,
                 atmCode,
-                imageUrl: selectedImage?.url,
-                imageType: selectedImage?.type,
-                commentText: newComment,
+                imageUrl: imageUrl || null, // Explicitly set to null if not provided
+                imageType: imageType || null,
+                commentText: newComment.trim(),
                 commentBy: userType === 'client' ? 'العميل' : 'المراجع',
                 commentByRole: userType,
             };
 
             console.log('Sending comment request:', {
-                ...requestBody,
+                workPlanId,
+                atmCode,
+                imageUrl: imageUrl ? (imageUrl.substring(0, 50) + '...') : 'null',
+                imageType,
                 commentText: requestBody.commentText.length > 50 
                     ? requestBody.commentText.substring(0, 50) + '...' 
                     : requestBody.commentText,
-                imageUrl: requestBody.imageUrl ? 'present' : 'none'
+                commentBy: requestBody.commentBy,
+                commentByRole: requestBody.commentByRole
             });
 
             const response = await fetch('/api/client-comments', {
@@ -419,9 +590,14 @@ function ReviewDetailsDialog({
 
             if (response.ok) {
                 const result = await response.json();
-                console.log('Comment added successfully:', result.id);
+                console.log('Comment added successfully:', {
+                    id: result.id,
+                    imageUrl: result.imageUrl ? 'present' : 'null',
+                    imageType: result.imageType
+                });
                 setNewComment('');
-                setSelectedImage(null);
+                // Don't clear selectedImage if it was set - keep it selected for more comments
+                // setSelectedImage(null);
                 await fetchComments();
                 toast({
                     title: 'تمت الإضافة',
@@ -502,26 +678,76 @@ function ReviewDetailsDialog({
         }
     };
 
+    const handleConfirmClose = async (commentId: number) => {
+        try {
+            const response = await fetch('/api/client-comments', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    id: String(commentId),
+                    status: 'resolved',
+                }),
+            });
+
+            if (!response.ok) {
+                let errorData;
+                try {
+                    errorData = await response.json();
+                } catch (e) {
+                    errorData = { error: `HTTP error! status: ${response.status}` };
+                }
+                throw new Error(errorData.error || errorData.details || 'فشل تحديث حالة الملاحظة');
+            }
+
+            const updatedComment = await response.json();
+            await fetchComments();
+            toast({
+                title: 'تم التأكيد',
+                description: 'تم إغلاق الملاحظة بنجاح.'
+            });
+        } catch (error) {
+            console.error('Error confirming close:', error);
+            toast({
+                variant: 'destructive',
+                title: 'خطأ',
+                description: error instanceof Error ? error.message : 'حدث خطأ أثناء تأكيد الإغلاق.'
+            });
+        }
+    };
+
     const clientNotes = report.notes?.filter(n => n.user === 'العميل') || [];
     const reviewerNotes = report.notes?.filter(n => n.user === 'المراجع') || [];
     
     const canShowImages = report.status === 'Accepted';
     const unreadCount = comments.filter(c => !c.isRead).length;
 
-    // Count comments per image
+    // Count comments per image (normalize imageUrl for comparison)
     const getImageCommentCount = (imageUrl: string) => {
-        return comments.filter(c => c.imageUrl === imageUrl).length;
+        const normalizedUrl = imageUrl ? String(imageUrl).trim() : null;
+        return comments.filter(c => {
+            const commentImageUrl = c.imageUrl ? String(c.imageUrl).trim() : null;
+            return commentImageUrl === normalizedUrl && commentImageUrl !== null;
+        }).length;
     };
 
-    // Check if image has unread comments
+    // Check if image has unread comments (normalize imageUrl for comparison)
     const hasUnreadComments = (imageUrl: string) => {
-        return comments.some(c => c.imageUrl === imageUrl && !c.isRead);
+        const normalizedUrl = imageUrl ? String(imageUrl).trim() : null;
+        return comments.some(c => {
+            const commentImageUrl = c.imageUrl ? String(c.imageUrl).trim() : null;
+            return commentImageUrl === normalizedUrl && commentImageUrl !== null && !c.isRead;
+        });
     };
 
     // Filter comments by selected image
+    // Normalize imageUrl for comparison (trim whitespace and handle null/undefined)
     const filteredComments = selectedImage 
-        ? comments.filter(c => c.imageUrl === selectedImage.url)
-        : comments;
+        ? comments.filter(c => {
+            const commentImageUrl = c.imageUrl ? String(c.imageUrl).trim() : null;
+            const selectedImageUrl = selectedImage.url ? String(selectedImage.url).trim() : null;
+            return commentImageUrl === selectedImageUrl && commentImageUrl !== null;
+        })
+        : comments; // Show all comments when no image is selected
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -559,7 +785,11 @@ function ReviewDetailsDialog({
                                                             commentCount > 0 && "ring-2 ring-orange-500 rounded-lg"
                                                         )}
                                                     >
-                                                        <FullImageViewer src={img} />
+                                                        <FullImageViewer 
+                                                            src={img}
+                                                            allImages={report.beforeImages}
+                                                            currentIndex={i}
+                                                        />
                                                         
                                                         {/* Comment count badge */}
                                                         {commentCount > 0 && (
@@ -616,7 +846,11 @@ function ReviewDetailsDialog({
                                                             commentCount > 0 && "ring-2 ring-orange-500 rounded-lg"
                                                         )}
                                                     >
-                                                        <FullImageViewer src={img} />
+                                                        <FullImageViewer 
+                                                            src={img}
+                                                            allImages={report.afterImages}
+                                                            currentIndex={i}
+                                                        />
                                                         
                                                         {/* Comment count badge */}
                                                         {commentCount > 0 && (
@@ -731,6 +965,7 @@ function ReviewDetailsDialog({
                                                             comment={comment} 
                                                             userType={userType}
                                                             onReply={handleReply}
+                                                            onConfirmClose={handleConfirmClose}
                                                         />
                                                     ))}
                                                     {/* Element for scrolling to bottom */}
@@ -827,19 +1062,40 @@ function NotesTable({ notes }: { notes: Note[] }) {
 }
 
 
-export default function ClientReviewPage() {
+function ClientReviewPageContent() {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const searchParams = useSearchParams();
   const [data, setData] = React.useState<WorkPlanReport[]>([]);
   const [selectedReportId, setSelectedReportId] = React.useState<string | null>(null);
-  const [userType, setUserType] = React.useState<'client' | 'reviewer'>('client');
+  const [isLoading, setIsLoading] = React.useState(true);
+  const [targetImageUrl, setTargetImageUrl] = React.useState<string | null>(null);
+  const [targetImageType, setTargetImageType] = React.useState<'before' | 'after' | null>(null);
+  
+  // Determine userType based on actual user role
+  // If user is CLIENT, force userType to 'client' and don't allow switching
+  const actualUserType: 'client' | 'reviewer' = React.useMemo(() => {
+    if (user?.role === 'CLIENT') return 'client';
+    return 'reviewer';
+  }, [user?.role]);
+  
+  const [userType, setUserType] = React.useState<'client' | 'reviewer'>(actualUserType);
   const [searchQuery, setSearchQuery] = React.useState('');
   const [dateFrom, setDateFrom] = React.useState<Date | undefined>(undefined);
   const [dateTo, setDateTo] = React.useState<Date | undefined>(undefined);
+  
+  // Update userType when actualUserType changes
+  React.useEffect(() => {
+    setUserType(actualUserType);
+  }, [actualUserType]);
 
   // Fetch work plans from API
   const fetchWorkPlans = React.useCallback(async () => {
     try {
-      const response = await fetch('/api/work-plans');
+      setIsLoading(true);
+      // Include atmReports to get images (but API will optimize by excluding large images)
+      // Limit to 100 records for better performance (images are large)
+      const response = await fetch('/api/work-plans?includeReports=true&limit=100');
       if (!response.ok) {
         throw new Error('Failed to fetch work plans');
       }
@@ -933,12 +1189,81 @@ export default function ClientReviewPage() {
         description: "حدث خطأ أثناء تحميل خطط العمل",
         variant: "destructive",
       });
+    } finally {
+      setIsLoading(false);
     }
   }, [toast]);
 
   React.useEffect(() => {
     fetchWorkPlans();
   }, [fetchWorkPlans]);
+
+  // Auto-refresh data every 30 seconds to get latest images
+  React.useEffect(() => {
+    const interval = setInterval(() => {
+      fetchWorkPlans();
+    }, 30000); // Refresh every 30 seconds
+
+    return () => clearInterval(interval);
+  }, [fetchWorkPlans]);
+
+  // Refresh data when dialog opens to ensure latest images are shown
+  React.useEffect(() => {
+    if (selectedReportId) {
+      // Refresh data when opening a report dialog
+      fetchWorkPlans();
+    }
+  }, [selectedReportId, fetchWorkPlans]);
+
+  // Handle query parameters to open specific report and image
+  React.useEffect(() => {
+    const workPlanId = searchParams.get('workPlanId');
+    const atmCode = searchParams.get('atmCode');
+
+    if (workPlanId && atmCode && data.length > 0) {
+      // Get image info from sessionStorage (to avoid URL length issues)
+      let imageUrl: string | null = null;
+      let imageType: 'before' | 'after' | null = null;
+      
+      if (typeof window !== 'undefined') {
+        try {
+          imageUrl = sessionStorage.getItem('targetImageUrl');
+          const storedImageType = sessionStorage.getItem('targetImageType');
+          if (storedImageType === 'before' || storedImageType === 'after') {
+            imageType = storedImageType;
+          }
+          // Clear sessionStorage after reading
+          sessionStorage.removeItem('targetImageUrl');
+          sessionStorage.removeItem('targetImageType');
+        } catch (error) {
+          console.warn('Failed to read image info from sessionStorage:', error);
+        }
+      }
+
+      // Find the report that matches workPlanId and atmCode
+      const targetReport = data.find(report => {
+        const reportWorkPlanId = report.workPlanId || parseInt(report.id.split('-')[0]);
+        return reportWorkPlanId === parseInt(workPlanId) && report.atmCode === atmCode;
+      });
+
+      if (targetReport) {
+        setSelectedReportId(targetReport.id);
+        if (imageUrl) {
+          setTargetImageUrl(imageUrl);
+          setTargetImageType(imageType);
+        }
+        
+        // Clear URL parameters after opening
+        if (typeof window !== 'undefined') {
+          const url = new URL(window.location.href);
+          url.searchParams.delete('workPlanId');
+          url.searchParams.delete('atmCode');
+          url.searchParams.delete('commentId');
+          window.history.replaceState({}, '', url.pathname);
+        }
+      }
+    }
+  }, [searchParams, data]);
 
   const selectedReport = React.useMemo(() => data.find(r => r.id === selectedReportId) || null, [data, selectedReportId]);
   
@@ -1099,10 +1424,24 @@ export default function ClientReviewPage() {
                     استعرض صور الأعمال، أضف تعليقاتك وردودك على الملاحظات.
                 </p>
             </div>
-             <div className="flex items-center gap-2">
-                <Label>عرض كـ:</Label>
-                <Button variant={userType === 'client' ? 'default' : 'outline'} onClick={() => setUserType('client')}>عميل</Button>
-                <Button variant={userType === 'reviewer' ? 'default' : 'outline'} onClick={() => setUserType('reviewer')}>مراجع</Button>
+            <div className="flex items-center gap-2">
+              {/* Show view switcher only for non-CLIENT users */}
+              {user?.role !== 'CLIENT' && (
+                <div className="flex items-center gap-2" suppressHydrationWarning>
+                  <Label>عرض كـ:</Label>
+                  <Button variant={userType === 'client' ? 'default' : 'outline'} onClick={() => setUserType('client')}>عميل</Button>
+                  <Button variant={userType === 'reviewer' ? 'default' : 'outline'} onClick={() => setUserType('reviewer')}>مراجع</Button>
+                </div>
+              )}
+              <Button 
+                variant="outline"
+                onClick={fetchWorkPlans}
+                disabled={isLoading}
+                suppressHydrationWarning
+              >
+                <RefreshCw className={`ml-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} /> 
+                {isLoading ? 'جاري التحديث...' : 'تحديث'}
+              </Button>
             </div>
         </div>
 
@@ -1213,7 +1552,16 @@ export default function ClientReviewPage() {
                 ))}
             </TableHeader>
             <TableBody>
-                {table.getRowModel().rows?.length ? (
+                {isLoading && data.length === 0 ? (
+                <TableRow>
+                    <TableCell colSpan={columns.length} className="h-24 text-center">
+                    <div className="flex flex-col items-center gap-2">
+                      <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
+                      <span>جاري تحميل البيانات...</span>
+                    </div>
+                    </TableCell>
+                </TableRow>
+                ) : table.getRowModel().rows?.length ? (
                 table.getRowModel().rows.map((row) => (
                     <TableRow key={row.id}>
                     {row.getVisibleCells().map((cell) => (
@@ -1240,12 +1588,34 @@ export default function ClientReviewPage() {
                 onOpenChange={(isOpen) => {
                     if (!isOpen) {
                         setSelectedReportId(null);
+                        setTargetImageUrl(null);
+                        setTargetImageType(null);
+                    } else {
+                        // Refresh data when opening dialog to get latest images
+                        fetchWorkPlans();
                     }
                 }}
                 userType={userType}
                 onNoteAdd={handleNoteAdd}
+                targetImageUrl={targetImageUrl}
+                targetImageType={targetImageType}
             />
         )}
     </div>
+  );
+}
+
+export default function ClientReviewPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-4 text-muted-foreground" />
+          <p className="text-muted-foreground">جاري التحميل...</p>
+        </div>
+      </div>
+    }>
+      <ClientReviewPageContent />
+    </Suspense>
   );
 }

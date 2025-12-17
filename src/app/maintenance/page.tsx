@@ -57,7 +57,6 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import type { MaintenanceTask } from '@/lib/types';
-import { atms, maintenanceTasks, technicians } from '@/lib/data';
 import { PlusCircle, Calendar as CalendarIcon } from 'lucide-react';
 import { format } from 'date-fns';
 import { Calendar } from '@/components/ui/calendar';
@@ -78,27 +77,21 @@ const priorityVariant: { [key: string]: 'default' | 'secondary' | 'destructive' 
     Low: 'default',
 };
 
-const columns: ColumnDef<MaintenanceTask>[] = [
+const columns: ColumnDef<MaintenanceTask & { atmLocation?: string; technicianName?: string }>[] = [
   {
     accessorKey: 'description',
     header: 'المهمة',
     cell: ({ row }) => <div className="font-medium">{row.getValue('description')}</div>,
   },
   {
-    accessorKey: 'atmId',
+    accessorKey: 'atmLocation',
     header: 'موقع الصراف الآلي',
-    cell: ({ row }) => {
-      const atm = atms.find(a => a.id === row.getValue('atmId'));
-      return <div>{atm?.location || 'N/A'}</div>;
-    },
+    cell: ({ row }) => <div>{row.original.atmLocation || 'N/A'}</div>,
   },
   {
-    accessorKey: 'technicianId',
+    accessorKey: 'technicianName',
     header: 'الفني المسؤول',
-    cell: ({ row }) => {
-      const tech = technicians.find(t => t.id === row.getValue('technicianId'));
-      return <div>{tech?.name || 'غير معين'}</div>;
-    },
+    cell: ({ row }) => <div>{row.original.technicianName || 'غير معين'}</div>,
   },
   {
     accessorKey: 'status',
@@ -150,13 +143,50 @@ const columns: ColumnDef<MaintenanceTask>[] = [
 ];
 
 export default function MaintenancePage() {
-  const [data, setData] = React.useState<MaintenanceTask[]>(maintenanceTasks);
+  const [data, setData] = React.useState<(MaintenanceTask & { atmLocation?: string; technicianName?: string })[]>([]);
+  const [atms, setAtms] = React.useState<any[]>([]);
+  const [technicians, setTechnicians] = React.useState<any[]>([]);
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] =
     React.useState<VisibilityState>({});
   const [rowSelection, setRowSelection] = React.useState({});
   const [date, setDate] = React.useState<Date>();
+
+  React.useEffect(() => {
+    // جلب مهام الصيانة من قاعدة البيانات
+    (async () => {
+      try {
+        const [tasksRes, atmsRes, techsRes] = await Promise.all([
+          fetch('/api/maintenance-tasks', { cache: 'no-store' }),
+          fetch('/api/atms', { cache: 'no-store' }),
+          fetch('/api/technicians', { cache: 'no-store' }),
+        ]);
+
+        const [tasks, atmsData, techniciansData] = await Promise.all([
+          tasksRes.ok ? tasksRes.json() : [],
+          atmsRes.ok ? atmsRes.json() : [],
+          techsRes.ok ? techsRes.json() : [],
+        ]);
+
+        // حفظ البيانات في state
+        setAtms(Array.isArray(atmsData) ? atmsData : []);
+        setTechnicians(Array.isArray(techniciansData) ? techniciansData : []);
+
+        const mapped = Array.isArray(tasks)
+          ? tasks.map((t: any) => ({
+              ...t,
+              atmLocation: atmsData.find((a: any) => a.atmCode === t.atmCode)?.atmAddress,
+              technicianName: techniciansData.find((tech: any) => tech.id === t.technicianId)?.name,
+            }))
+          : [];
+
+        setData(mapped);
+      } catch (e) {
+        console.error('Error fetching maintenance page data:', e);
+      }
+    })();
+  }, []);
 
   const table = useReactTable({
     data,
@@ -313,7 +343,11 @@ export default function MaintenancePage() {
                   <SelectValue placeholder="اختر صراف آلي" />
                 </SelectTrigger>
                 <SelectContent>
-                  {atms.map(atm => <SelectItem key={atm.id} value={atm.id}>{atm.bank} - {atm.location}</SelectItem>)}
+                  {atms.map((atm: any) => (
+                    <SelectItem key={atm.id || atm.atmCode} value={atm.id || atm.atmCode}>
+                      {atm.bankName || atm.bank} - {atm.atmAddress || atm.location || atm.atmCode}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

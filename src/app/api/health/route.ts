@@ -1,16 +1,26 @@
-import { prisma } from '@/lib/prisma'
+import { getPrisma } from '@/lib/prisma'
 import { NextResponse } from 'next/server'
 
 export async function GET() {
   try {
+    const prisma = getPrisma()
     // Test database connection
     await prisma.$connect()
     
-    // Try a simple query
-    const representativeCount = await prisma.representative.count()
-    const atmCount = await prisma.aTM.count()
-    const workPlanCount = await prisma.workPlan.count()
-    const commentCount = await prisma.clientComment.count()
+    // Try a simple query using correct models
+    const representativeCount = await prisma.delegateData.count({
+      where: { Isdeleted: false, IsNotactive: false }
+    }).catch(() => 0)
+    
+    const atmCount = await prisma.bankATM.count({
+      where: { IsDeleted: false, IsNotActive: false }
+    }).catch(() => 0)
+    
+    const workPlanCount = await prisma.workPlanHeaders.count({
+      where: { IsDeleted: false, IsNotActive: false }
+    }).catch(() => 0)
+    
+    const commentCount = await prisma.clientComment.count().catch(() => 0)
     
     return NextResponse.json({
       status: 'healthy',

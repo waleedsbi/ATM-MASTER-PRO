@@ -1,0 +1,29 @@
+# ملف إعدادات systemd للخادم
+# انسخ هذا الملف إلى /etc/systemd/system/atm-master-pro.service
+# ثم شغّل: sudo systemctl daemon-reload && sudo systemctl enable atm-master-pro
+
+[Unit]
+Description=ATM Master Pro Next.js Application
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/atm-master-pro
+Environment=NODE_ENV=production
+Environment=PORT=9002
+ExecStart=/usr/bin/npm start
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=atm-master-pro
+
+# حدود الموارد
+LimitNOFILE=65536
+MemoryMax=2G
+
+[Install]
+WantedBy=multi-user.target
+

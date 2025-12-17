@@ -1,0 +1,36 @@
+===========================================
+أوامر النشر على الخادم - انسخ والصق
+===========================================
+
+=== الخطوة 2: رفع الملفات (من جهازك المحلي) ===
+
+scp -r . root@95.216.63.80:/var/www/atm-master-pro
+
+
+=== الخطوة 3: على الخادم (بعد تسجيل الدخول) ===
+
+cd /var/www/atm-master-pro
+chmod +x deploy.sh
+./deploy.sh
+npm install -g pm2
+pm2 start ecosystem.config.js
+pm2 save
+pm2 startup
+
+
+=== الخطوة 4: التحقق ===
+
+pm2 status
+pm2 logs atm-master-pro
+
+
+=== فتح المتصفح ===
+
+https://springtradingclean.com
+
+
+=== تسجيل الدخول ===
+
+Email: admin@atmpro.com
+Password: admin123
+

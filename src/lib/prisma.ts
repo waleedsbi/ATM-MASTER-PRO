@@ -1,24 +1,45 @@
 import { PrismaClient } from '@prisma/client'
 
-const globalForPrisma = global as unknown as { prisma: PrismaClient }
+declare global {
+  var __prismaClient: PrismaClient | undefined
+}
 
-export const prisma =
-  globalForPrisma.prisma ||
-  new PrismaClient({
-    log: ['query', 'error', 'warn'],
+/**
+ * إنشاء Prisma Client مع إعدادات الترميز الصحيحة
+ * 
+ * ملاحظات مهمة حول الترميز العربي:
+ * - SQL Server يستخدم NVARCHAR لدعم Unicode (العربية)
+ * - Prisma مع SQL Server لا يدعم charset parameter في connection string
+ * - يجب ضبط COLLATION في قاعدة البيانات نفسها (Arabic_CI_AS)
+ * - عند استعادة النسخة الاحتياطية، يجب تنفيذ سكربت fix-arabic-encoding-after-restore.sql
+ * 
+ * @see FIX_ARABIC_AFTER_BACKUP_RESTORE.md للحلول الشاملة
+ */
+function getPrismaClient(): PrismaClient {
+  if (globalThis.__prismaClient) {
+    return globalThis.__prismaClient
+  }
+
+  const prisma = new PrismaClient({
+    log: process.env.NODE_ENV === 'development' 
+      ? ['query', 'error'] // Removed 'warn' to suppress certificate warnings
+      : ['error'],
     errorFormat: 'pretty',
+    datasources: {
+      db: {
+        url: process.env.DATABASE_URL,
+        // ملاحظة: Prisma مع SQL Server لا يدعم charset parameter
+        // يجب ضبط COLLATION في قاعدة البيانات نفسها
+      },
+    },
   })
 
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
-
-// Test database connection on startup
-export async function testDatabaseConnection() {
-  try {
-    await prisma.$connect()
-    console.log('✅ Database connected successfully')
-    return true
-  } catch (error) {
-    console.error('❌ Database connection failed:', error)
-    return false
-  }
+  globalThis.__prismaClient = prisma
+  return prisma
 }
+
+export function getPrisma(): PrismaClient {
+  return getPrismaClient()
+}
+
+export const prisma: PrismaClient = getPrismaClient()

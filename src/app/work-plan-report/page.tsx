@@ -41,10 +41,12 @@ import {
   CalendarIcon,
   Save,
   Search,
+  RefreshCw,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import type { WorkPlanReport, WorkPlanReportStatus, Note } from '@/lib/types';
-import { banks, governorates } from '@/lib/data';
-import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import Image from 'next/image';
 import { Label } from '@/components/ui/label';
@@ -82,12 +84,44 @@ function DatePicker() {
     )
 }
 
-const FullImageViewer = ({ src, onRemove }: { src: string; onRemove?: () => void }) => {
+const FullImageViewer = ({ 
+    src, 
+    onRemove,
+    allImages,
+    currentIndex
+}: { 
+    src: string; 
+    onRemove?: () => void;
+    allImages?: string[];
+    currentIndex?: number;
+}) => {
+    // Support both base64 and URL images
+    const imageSrc = src.startsWith('data:') || src.startsWith('http') || src.startsWith('/') 
+        ? src 
+        : src.startsWith('uploads') 
+            ? `/${src}` 
+            : src;
+    
+    const images = allImages || [src];
+    const initialIndex = currentIndex !== undefined ? currentIndex : (allImages ? allImages.indexOf(src) : 0);
+    const [currentImageIndex, setCurrentImageIndex] = React.useState(initialIndex);
     const [zoom, setZoom] = React.useState(1);
     const [position, setPosition] = React.useState({ x: 0, y: 0 });
     const [isDragging, setIsDragging] = React.useState(false);
     const [dragStart, setDragStart] = React.useState({ x: 0, y: 0 });
     const [open, setOpen] = React.useState(false);
+    
+    // Get current image source
+    const currentImageSrc = images[currentImageIndex] || src;
+    const normalizedCurrentSrc = currentImageSrc.startsWith('data:') || currentImageSrc.startsWith('http') || currentImageSrc.startsWith('/') 
+        ? currentImageSrc 
+        : currentImageSrc.startsWith('uploads') 
+            ? `/${currentImageSrc}` 
+            : currentImageSrc;
+    
+    const hasMultipleImages = images.length > 1;
+    const canGoPrevious = hasMultipleImages && currentImageIndex > 0;
+    const canGoNext = hasMultipleImages && currentImageIndex < images.length - 1;
     
     const handleReset = () => {
         setZoom(1);
@@ -131,17 +165,67 @@ const FullImageViewer = ({ src, onRemove }: { src: string; onRemove?: () => void
         setIsDragging(false);
     };
     
-    React.useEffect(() => {
-        if (!open) {
+    const handlePrevious = (e?: React.MouseEvent) => {
+        if (e) e.stopPropagation();
+        if (canGoPrevious) {
+            setCurrentImageIndex(prev => prev - 1);
             handleReset();
         }
-    }, [open]);
+    };
+    
+    const handleNext = (e?: React.MouseEvent) => {
+        if (e) e.stopPropagation();
+        if (canGoNext) {
+            setCurrentImageIndex(prev => prev + 1);
+            handleReset();
+        }
+    };
+    
+    // Update current image index when dialog opens or src changes
+    React.useEffect(() => {
+        if (open && allImages && currentIndex !== undefined) {
+            setCurrentImageIndex(currentIndex);
+            handleReset();
+        } else if (!open) {
+            handleReset();
+        }
+    }, [open, allImages, currentIndex]);
+    
+    // Handle keyboard navigation
+    React.useEffect(() => {
+        if (!open) return;
+        
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'ArrowLeft' && canGoPrevious) {
+                e.preventDefault();
+                setCurrentImageIndex(prev => {
+                    if (prev > 0) {
+                        handleReset();
+                        return prev - 1;
+                    }
+                    return prev;
+                });
+            } else if (e.key === 'ArrowRight' && canGoNext) {
+                e.preventDefault();
+                setCurrentImageIndex(prev => {
+                    if (prev < images.length - 1) {
+                        handleReset();
+                        return prev + 1;
+                    }
+                    return prev;
+                });
+            }
+        };
+        
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [open, canGoPrevious, canGoNext, images.length]);
     
     return (
         <Dialog open={open} onOpenChange={setOpen}>
         <DialogTrigger asChild>
             <div className="relative group cursor-pointer">
-                <Image src={src} alt="Uploaded Image" width={100} height={100} className="rounded-md object-cover aspect-square" />
+                <Image src={imageSrc} alt="Uploaded Image" width={100} height={100} className="rounded-md object-cover aspect-square" unoptimized={imageSrc.startsWith('data:')} />
                  {onRemove && (
                     <button onClick={(e) => { e.stopPropagation(); onRemove(); }} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                         <X size={12} />
@@ -152,7 +236,14 @@ const FullImageViewer = ({ src, onRemove }: { src: string; onRemove?: () => void
             <DialogContent className="max-w-5xl h-[80vh]">
             <DialogHeader>
                     <DialogTitle className="flex items-center justify-between">
-                        <span>صورة بالحجم الكامل</span>
+                        <span>
+                            صورة بالحجم الكامل
+                            {hasMultipleImages && (
+                                <span className="text-sm text-muted-foreground mr-2">
+                                    ({currentImageIndex + 1} / {images.length})
+                                </span>
+                            )}
+                        </span>
                         <div className="flex items-center gap-2">
                             <Button variant="outline" size="sm" onClick={handleZoomOut} disabled={zoom <= 0.5}>
                                 <span className="text-lg">-</span>
@@ -166,6 +257,10 @@ const FullImageViewer = ({ src, onRemove }: { src: string; onRemove?: () => void
                             </Button>
                         </div>
                     </DialogTitle>
+                    <DialogDescription>
+                        استخدم عجلة الفأرة للتكبير/التصغير، واسحب الصورة للتحريك
+                        {hasMultipleImages && ' | استخدم الأسهم للتنقل بين الصور'}
+                    </DialogDescription>
             </DialogHeader>
                 <div 
                     className="flex-1 flex justify-center items-center overflow-hidden bg-gray-100 dark:bg-gray-900 rounded-md relative"
@@ -176,6 +271,32 @@ const FullImageViewer = ({ src, onRemove }: { src: string; onRemove?: () => void
                     onMouseLeave={handleMouseUp}
                     style={{ cursor: isDragging ? 'grabbing' : zoom > 1 ? 'grab' : 'default' }}
                 >
+                    {/* Previous button */}
+                    {hasMultipleImages && canGoPrevious && (
+                        <Button
+                            variant="outline"
+                            size="icon"
+                            className="absolute left-4 z-10 bg-background/80 hover:bg-background shadow-lg"
+                            onClick={handlePrevious}
+                            aria-label="الصورة السابقة"
+                        >
+                            <ChevronLeft className="h-6 w-6" />
+                        </Button>
+                    )}
+                    
+                    {/* Next button */}
+                    {hasMultipleImages && canGoNext && (
+                        <Button
+                            variant="outline"
+                            size="icon"
+                            className="absolute right-4 z-10 bg-background/80 hover:bg-background shadow-lg"
+                            onClick={handleNext}
+                            aria-label="الصورة التالية"
+                        >
+                            <ChevronRight className="h-6 w-6" />
+                        </Button>
+                    )}
+                    
                     <div
                         style={{
                             transform: `translate(${position.x}px, ${position.y}px) scale(${zoom})`,
@@ -183,12 +304,14 @@ const FullImageViewer = ({ src, onRemove }: { src: string; onRemove?: () => void
                         }}
                     >
                         <Image 
-                            src={src} 
-                            alt="Full size image" 
+                            key={currentImageIndex}
+                            src={normalizedCurrentSrc} 
+                            alt={`Full size image ${currentImageIndex + 1}`} 
                             width={1200} 
                             height={900} 
                             className="rounded-md object-contain max-h-[60vh] w-auto"
                             draggable={false}
+                            unoptimized={normalizedCurrentSrc.startsWith('data:')}
                         />
                     </div>
                 </div>
@@ -207,6 +330,17 @@ function UploadDialog({ report, onSave, onNoteAdd }: { report: WorkPlanReport; o
     const [beforeImages, setBeforeImages] = React.useState<string[]>(report.beforeImages || []);
     const [afterImages, setAfterImages] = React.useState<string[]>(report.afterImages || []);
     const [newNote, setNewNote] = React.useState('');
+    const beforeImagesRef = React.useRef(beforeImages);
+    const afterImagesRef = React.useRef(afterImages);
+    
+    // Keep refs in sync with state
+    React.useEffect(() => {
+        beforeImagesRef.current = beforeImages;
+    }, [beforeImages]);
+    
+    React.useEffect(() => {
+        afterImagesRef.current = afterImages;
+    }, [afterImages]);
 
     React.useEffect(() => {
         if(open) {
@@ -216,56 +350,155 @@ function UploadDialog({ report, onSave, onNoteAdd }: { report: WorkPlanReport; o
         }
     }, [open, report]);
 
-    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>, setter: React.Dispatch<React.SetStateAction<string[]>>) => {
-        if (e.target.files) {
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>, setter: React.Dispatch<React.SetStateAction<string[]>>, imageType: 'before' | 'after') => {
+        if (e.target.files && e.target.files.length > 0) {
             const files = Array.from(e.target.files);
             
-            // Convert files to base64 for permanent storage
-            const base64Promises = files.map(file => {
-                return new Promise<string>((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onload = () => resolve(reader.result as string);
-                    reader.onerror = reject;
-                    reader.readAsDataURL(file);
-                });
-            });
-            
             try {
-                const base64Images = await Promise.all(base64Promises);
-                setter(prev => [...prev, ...base64Images]);
+                // Get workPlanId and atmCode from report
+                const workPlanId = report.workPlanId || parseInt(report.id.split('-')[0]);
+                const atmCode = report.atmCode;
+
+                if (!workPlanId || !atmCode) {
+                    throw new Error('معلومات التقرير غير مكتملة');
+                }
+
+                console.log('🔄 Starting upload for:', { workPlanId, atmCode, imageType, fileCount: files.length });
+
+                // Upload files to server
+                const formData = new FormData();
+                files.forEach(file => {
+                    formData.append('files', file);
+                });
+                formData.append('workPlanId', String(workPlanId));
+                formData.append('atmCode', atmCode);
+                formData.append('imageType', imageType);
+
+                const uploadResponse = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                if (!uploadResponse.ok) {
+                    const errorData = await uploadResponse.json().catch(() => ({ error: 'فشل رفع الصور' }));
+                    throw new Error(errorData.error || 'فشل رفع الصور');
+                }
+
+                const uploadResult = await uploadResponse.json();
+                console.log('✅ Upload successful:', uploadResult);
+                
+                // Add uploaded URLs to the list and update refs
+                // Keep existing images (could be base64 or URLs) and add new URLs
+                let updatedImages: string[] = [];
+                setter(prev => {
+                    updatedImages = [...prev, ...uploadResult.urls];
+                    console.log('📸 Updated images list:', { previousCount: prev.length, newCount: updatedImages.length });
+                    
+                    // Update refs immediately
+                    if (imageType === 'before') {
+                        beforeImagesRef.current = updatedImages;
+                    } else {
+                        afterImagesRef.current = updatedImages;
+                    }
+                    
+                    return updatedImages;
+                });
+                
+                // Auto-save images to database after successful upload
+                setTimeout(async () => {
+                    try {
+                        // Get current state values
+                        const currentBeforeImages = imageType === 'before' 
+                            ? updatedImages
+                            : beforeImagesRef.current;
+                        const currentAfterImages = imageType === 'after'
+                            ? updatedImages
+                            : afterImagesRef.current;
+                        
+                        console.log('💾 Auto-saving images to database...', {
+                            beforeCount: currentBeforeImages.length,
+                            afterCount: currentAfterImages.length,
+                            imageType
+                        });
+                        
+                        await onSave(report.id, currentBeforeImages, currentAfterImages);
+                        console.log('✅ Images saved to database successfully');
+                    } catch (saveError) {
+                        console.error('❌ Error auto-saving images:', saveError);
+                        toast({
+                            variant: 'destructive',
+                            title: 'تحذير',
+                            description: 'تم رفع الصور لكن فشل حفظها في قاعدة البيانات. يرجى الضغط على زر "حفظ"',
+                        });
+                    }
+                }, 100);
+                
+                toast({
+                    title: 'تم الرفع',
+                    description: `تم رفع ${uploadResult.count} صورة بنجاح`,
+                });
             } catch (error) {
-                console.error('Error converting images to base64:', error);
+                console.error('❌ Error uploading images:', error);
                 toast({
                     variant: 'destructive',
                     title: 'خطأ',
-                    description: 'فشل تحميل الصور. حاول مرة أخرى.',
+                    description: error instanceof Error ? error.message : 'فشل رفع الصور. حاول مرة أخرى.',
                 });
+            } finally {
+                // Reset input value to allow selecting the same file again
+                e.target.value = '';
             }
         }
     };
 
-    const removeImage = (index: number, setter: React.Dispatch<React.SetStateAction<string[]>>) => {
+    const removeImage = async (index: number, setter: React.Dispatch<React.SetStateAction<string[]>>, imageType: 'before' | 'after') => {
+        const currentImages = imageType === 'before' ? beforeImages : afterImages;
+        const imageToRemove = currentImages[index];
+        
+        // If it's a URL (not base64), delete from server
+        if (imageToRemove && !imageToRemove.startsWith('data:') && (imageToRemove.startsWith('/uploads') || imageToRemove.startsWith('uploads'))) {
+            try {
+                const urlToDelete = imageToRemove.startsWith('/') ? imageToRemove : `/${imageToRemove}`;
+                await fetch(`/api/upload?url=${encodeURIComponent(urlToDelete)}`, {
+                    method: 'DELETE',
+                });
+            } catch (error) {
+                console.error('Error deleting image from server:', error);
+                // Continue with removal from UI even if server deletion fails
+            }
+        }
+        
         setter(prev => prev.filter((_, i) => i !== index));
     };
     
-    const handleSave = () => {
-        onSave(report.id, beforeImages, afterImages);
+    const handleSave = async () => {
+        try {
+            await onSave(report.id, beforeImages, afterImages);
 
-        if (newNote.trim()) {
-            const note: Note = {
-                id: `note-${Date.now()}`,
-                text: newNote,
-                date: new Date().toISOString(),
-                user: 'reviewer',
-            };
-            onNoteAdd(report.id, note);
+            if (newNote.trim()) {
+                const note: Note = {
+                    id: `note-${Date.now()}`,
+                    text: newNote,
+                    date: new Date().toISOString(),
+                    user: 'reviewer',
+                };
+                onNoteAdd(report.id, note);
+                setNewNote(''); // Clear note after adding
+            }
+
+            toast({
+                title: "تم الحفظ",
+                description: "تم حفظ الصور والملاحظات بنجاح.",
+            });
+            // Don't close dialog automatically - let user close it manually
+        } catch (error) {
+            console.error('Error saving:', error);
+            toast({
+                variant: 'destructive',
+                title: "خطأ",
+                description: "حدث خطأ أثناء الحفظ. يرجى المحاولة مرة أخرى.",
+            });
         }
-
-        toast({
-            title: "تم الحفظ",
-            description: "تم حفظ الصور والملاحظات بنجاح.",
-        });
-        setOpen(false);
     };
 
     return (
@@ -278,6 +511,9 @@ function UploadDialog({ report, onSave, onNoteAdd }: { report: WorkPlanReport; o
             <DialogContent className="max-w-2xl">
                 <DialogHeader>
                     <DialogTitle>رفع الصور وإضافة ملاحظات</DialogTitle>
+                    <DialogDescription>
+                        يمكنك رفع صور قبل وبعد العمل وإضافة ملاحظات المراجع
+                    </DialogDescription>
                 </DialogHeader>
                 <div className="grid gap-6 py-4 max-h-[70vh] overflow-y-auto pr-2">
                     <div className="grid gap-2">
@@ -288,17 +524,36 @@ function UploadDialog({ report, onSave, onNoteAdd }: { report: WorkPlanReport; o
                         <Label htmlFor="image-before">صور قبل العمل</Label>
                         <div className="rounded-md border border-dashed p-4">
                             <div className="flex items-center gap-2 mb-4">
-                                <Button variant="outline" asChild>
-                                    <Label htmlFor="file-before" className="cursor-pointer">
-                                        <Upload className="mr-2 h-4 w-4" />
-                                        اختر صور
-                                    </Label>
-                                </Button>
-                                <Input id="file-before" type="file" className="hidden" multiple onChange={(e) => handleFileChange(e, setBeforeImages)} />
+                                <Label htmlFor="file-before" className="cursor-pointer">
+                                    <Button variant="outline" type="button" asChild>
+                                        <span>
+                                            <Upload className="mr-2 h-4 w-4" />
+                                            اختر صور
+                                        </span>
+                                    </Button>
+                                </Label>
+                                <Input 
+                                    id="file-before" 
+                                    type="file" 
+                                    className="hidden" 
+                                    multiple 
+                                    accept="image/*" 
+                                    onChange={(e) => {
+                                        e.stopPropagation();
+                                        handleFileChange(e, setBeforeImages, 'before');
+                                    }}
+                                    onClick={(e) => e.stopPropagation()}
+                                />
                             </div>
                              <div className="flex flex-wrap gap-2">
                                 {beforeImages.map((src, index) => (
-                                    <FullImageViewer key={`before-${index}`} src={src} onRemove={() => removeImage(index, setBeforeImages)} />
+                                    <FullImageViewer 
+                                        key={`before-${index}`} 
+                                        src={src} 
+                                        onRemove={() => removeImage(index, setBeforeImages, 'before')}
+                                        allImages={beforeImages}
+                                        currentIndex={index}
+                                    />
                                 ))}
                             </div>
                         </div>
@@ -307,17 +562,36 @@ function UploadDialog({ report, onSave, onNoteAdd }: { report: WorkPlanReport; o
                         <Label htmlFor="image-after">صور بعد العمل</Label>
                         <div className="rounded-md border border-dashed p-4">
                            <div className="flex items-center gap-2 mb-4">
-                            <Button variant="outline" asChild>
-                               <Label htmlFor="file-after" className="cursor-pointer">
-                                 <Upload className="mr-2 h-4 w-4" />
-                                 اختر صور
-                               </Label>
-                            </Button>
-                            <Input id="file-after" type="file" className="hidden" multiple onChange={(e) => handleFileChange(e, setAfterImages)} />
+                            <Label htmlFor="file-after" className="cursor-pointer">
+                                <Button variant="outline" type="button" asChild>
+                                    <span>
+                                        <Upload className="mr-2 h-4 w-4" />
+                                        اختر صور
+                                    </span>
+                                </Button>
+                            </Label>
+                            <Input 
+                                id="file-after" 
+                                type="file" 
+                                className="hidden" 
+                                multiple 
+                                accept="image/*" 
+                                onChange={(e) => {
+                                    e.stopPropagation();
+                                    handleFileChange(e, setAfterImages, 'after');
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                            />
                            </div>
                             <div className="flex flex-wrap gap-2">
                                 {afterImages.map((src, index) => (
-                                     <FullImageViewer key={`after-${index}`} src={src} onRemove={() => removeImage(index, setAfterImages)} />
+                                     <FullImageViewer 
+                                        key={`after-${index}`} 
+                                        src={src} 
+                                        onRemove={() => removeImage(index, setAfterImages, 'after')}
+                                        allImages={afterImages}
+                                        currentIndex={index}
+                                    />
                                 ))}
                             </div>
                         </div>
@@ -328,11 +602,11 @@ function UploadDialog({ report, onSave, onNoteAdd }: { report: WorkPlanReport; o
                     </div>
                 </div>
                 <DialogFooter>
-                    <Button onClick={handleSave} type="submit" className="bg-orange-500 hover:bg-orange-600 text-white">
+                    <Button onClick={handleSave} type="button" className="bg-orange-500 hover:bg-orange-600 text-white">
                         <Save className="ml-2 h-4 w-4" /> حفظ
                     </Button>
                     <DialogClose asChild>
-                        <Button variant="ghost">إلغاء</Button>
+                        <Button variant="ghost" type="button">إغلاق</Button>
                     </DialogClose>
                 </DialogFooter>
             </DialogContent>
@@ -346,11 +620,20 @@ export default function WorkPlanReportPage() {
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
   const { toast } = useToast();
   const [selectedReport, setSelectedReport] = React.useState<WorkPlanReport | null>(null);
+  const [filterBank, setFilterBank] = React.useState<string>('');
+  const [filterGovernorate, setFilterGovernorate] = React.useState<string>('');
+  const [filterCity, setFilterCity] = React.useState<string>('');
+
+  const [isLoading, setIsLoading] = React.useState(true);
 
   // Fetch work plans from API
   const fetchWorkPlans = React.useCallback(async () => {
     try {
-      const response = await fetch('/api/work-plans');
+      setIsLoading(true);
+      // For work plan report, we need images for accepted visits
+      // So we include reports but API will optimize by excluding large images for non-accepted
+      // Limit to 200 records for better performance
+      const response = await fetch('/api/work-plans?includeReports=true&limit=200');
       if (!response.ok) {
         throw new Error('Failed to fetch work plans');
       }
@@ -401,6 +684,8 @@ export default function WorkPlanReportPage() {
           // Create a separate report entry for each ATM code
           atmCodes.forEach((atmCode: string, index: number) => {
             // Get ATM-specific data
+            // Note: atmReports may not be loaded initially for performance
+            // We'll load images on demand when viewing/editing
             const atmData = atmReports[atmCode] || {
               beforeImages: [],
               afterImages: [],
@@ -411,6 +696,11 @@ export default function WorkPlanReportPage() {
             // Get status from ATM-specific data, fallback to plan status
             const atmStatus = atmData.status || plan.status || 'pending';
             const reportStatus = (atmStatus === 'completed' ? 'Accepted' : atmStatus === 'pending' ? 'Pending' : 'Rejected') as WorkPlanReportStatus;
+            
+            // For accepted visits, always load images regardless of count
+            // For other statuses, only load if count is small (performance optimization)
+            const isAccepted = reportStatus === 'Accepted';
+            const shouldLoadImages = isAccepted || (Array.isArray(atmData.beforeImages) && atmData.beforeImages.length < 10);
             
             reports.push({
               id: `${plan.id}-${index}`, // Unique ID for each ATM entry
@@ -423,8 +713,13 @@ export default function WorkPlanReportPage() {
               atmAddress: plan.city,
               representative: plan.representativeId?.toString() || 'N/A',
               status: reportStatus,
-              beforeImages: atmData.beforeImages || [],
-              afterImages: atmData.afterImages || [],
+              // Load images for accepted visits, or if count is small
+              beforeImages: shouldLoadImages && Array.isArray(atmData.beforeImages)
+                ? atmData.beforeImages 
+                : [],
+              afterImages: shouldLoadImages && Array.isArray(atmData.afterImages)
+                ? atmData.afterImages 
+                : [],
               notes: atmData.notes || [],
               bankName: plan.bankName,
               governorate: plan.governorate,
@@ -444,6 +739,8 @@ export default function WorkPlanReportPage() {
         description: "حدث خطأ أثناء تحميل خطط العمل",
         variant: "destructive",
       });
+    } finally {
+      setIsLoading(false);
     }
   }, [toast]);
 
@@ -511,6 +808,12 @@ export default function WorkPlanReportPage() {
                 : item
             ));
             
+            // Reload data to ensure consistency with database
+            // Use a small delay to allow database to commit the change
+            setTimeout(() => {
+              fetchWorkPlans();
+            }, 500);
+            
         toast({
             title: `تم تحديث الحالة`,
                 description: `تم تغيير حالة الماكينة ${atmCode} إلى "${status}".`,
@@ -555,16 +858,7 @@ export default function WorkPlanReportPage() {
         const requestSize = JSON.stringify(requestData).length;
         console.log('📤 Request data size:', requestSize, 'bytes');
         console.log('📤 Request data size in KB:', Math.round(requestSize / 1024), 'KB');
-        
-        if (beforeImages.length > 0) {
-          console.log('📸 First before image size:', beforeImages[0].length, 'characters');
-          console.log('📸 First before image preview:', beforeImages[0].substring(0, 100) + '...');
-        }
-        
-        if (afterImages.length > 0) {
-          console.log('📸 First after image size:', afterImages[0].length, 'characters');
-          console.log('📸 First after image preview:', afterImages[0].substring(0, 100) + '...');
-        }
+        console.log('📸 Images are now stored as URLs (not base64), so request is much smaller');
         
         console.log('🌐 Sending request to API...');
         const response = await fetch('/api/work-plans', {
@@ -597,6 +891,12 @@ export default function WorkPlanReportPage() {
         
         console.log('✅ Local state updated successfully');
         console.log('✅ Images saved successfully for ATM:', atmCode);
+        
+        // Reload data to ensure consistency with database
+        // Use a small delay to allow database to commit the change
+        setTimeout(() => {
+          fetchWorkPlans();
+        }, 500);
         
         toast({
           title: "تم الحفظ",
@@ -731,6 +1031,9 @@ export default function WorkPlanReportPage() {
         <DialogContent className="max-w-4xl">
           <DialogHeader>
             <DialogTitle>عرض الصور</DialogTitle>
+            <DialogDescription>
+              عرض جميع الصور المرتبطة بهذا التقرير
+            </DialogDescription>
           </DialogHeader>
           {selectedReport && (
             <div className="grid md:grid-cols-2 gap-8 max-h-[70vh] overflow-y-auto p-2">
@@ -738,7 +1041,14 @@ export default function WorkPlanReportPage() {
                 <h3 className="font-semibold">صور قبل العمل</h3>
                 <div className="mt-2 flex items-center gap-2 flex-wrap p-2 bg-muted rounded-md min-h-[120px]">
                   {selectedReport.beforeImages && selectedReport.beforeImages.length > 0 ? (
-                      selectedReport.beforeImages.map((src, i) => <FullImageViewer key={`before-${i}`} src={src} />)
+                      selectedReport.beforeImages.map((src, i) => (
+                        <FullImageViewer 
+                          key={`before-${i}`} 
+                          src={src}
+                          allImages={selectedReport.beforeImages}
+                          currentIndex={i}
+                        />
+                      ))
                   ) : (
                       <p className="text-sm text-muted-foreground">لا توجد صور قبل العمل.</p>
                   )}
@@ -748,7 +1058,14 @@ export default function WorkPlanReportPage() {
                 <h3 className="font-semibold">صور بعد العمل</h3>
                 <div className="mt-2 flex items-center gap-2 flex-wrap p-2 bg-muted rounded-md min-h-[120px]">
                    {selectedReport.afterImages && selectedReport.afterImages.length > 0 ? (
-                      selectedReport.afterImages.map((src, i) => <FullImageViewer key={`after-${i}`} src={src} />)
+                      selectedReport.afterImages.map((src, i) => (
+                        <FullImageViewer 
+                          key={`after-${i}`} 
+                          src={src}
+                          allImages={selectedReport.afterImages}
+                          currentIndex={i}
+                        />
+                      ))
                    ) : (
                       <p className="text-sm text-muted-foreground">لا توجد صور بعد العمل.</p>
                    )}
@@ -785,9 +1102,54 @@ export default function WorkPlanReportPage() {
   },
 ];
 
+  // Get unique values for filter dropdowns
+  const uniqueBanks = React.useMemo(() => {
+    const banks = new Set(data.map(report => report.bankName).filter(Boolean));
+    return Array.from(banks).sort();
+  }, [data]);
+
+  const uniqueGovernorates = React.useMemo(() => {
+    const governorates = new Set(data.map(report => report.governorate).filter(Boolean));
+    return Array.from(governorates).sort();
+  }, [data]);
+
+  const uniqueCities = React.useMemo(() => {
+    // Filter cities by selected governorate if any
+    let cities = data.map(report => report.city).filter(Boolean);
+    if (filterGovernorate) {
+      cities = data
+        .filter(report => report.governorate === filterGovernorate)
+        .map(report => report.city)
+        .filter(Boolean);
+    }
+    const citySet = new Set(cities);
+    return Array.from(citySet).sort();
+  }, [data, filterGovernorate]);
+
+  // Filter data based on filters
+  const filteredData = React.useMemo(() => {
+    let filtered = [...data];
+    
+    // Filter by bank
+    if (filterBank) {
+      filtered = filtered.filter(report => report.bankName === filterBank);
+    }
+    
+    // Filter by governorate
+    if (filterGovernorate) {
+      filtered = filtered.filter(report => report.governorate === filterGovernorate);
+    }
+    
+    // Filter by city
+    if (filterCity) {
+      filtered = filtered.filter(report => report.city === filterCity);
+    }
+    
+    return filtered;
+  }, [data, filterBank, filterGovernorate, filterCity]);
 
   const table = useReactTable({
-    data,
+    data: filteredData,
     columns,
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
@@ -805,42 +1167,49 @@ export default function WorkPlanReportPage() {
     <div className="w-full p-4 md:p-8" suppressHydrationWarning>
       <div className="flex flex-col gap-4">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Select>
+          <Select value={filterBank} onValueChange={(value) => {
+            setFilterBank(value === 'all' ? '' : value);
+            // Reset city filter when bank changes
+            if (value !== filterBank) {
+              setFilterCity('');
+            }
+          }}>
             <SelectTrigger suppressHydrationWarning>
               <SelectValue placeholder="أختار البنك" />
             </SelectTrigger>
             <SelectContent>
-              {banks.map((bank) => (
-                <SelectItem key={bank.id} value={bank.nameAr}>
-                  {bank.nameAr}
-                </SelectItem>
+              <SelectItem value="all">الكل</SelectItem>
+              {uniqueBanks.map(bank => (
+                <SelectItem key={bank} value={bank}>{bank}</SelectItem>
               ))}
             </SelectContent>
           </Select>
-          <Select>
+          <Select value={filterGovernorate} onValueChange={(value) => {
+            setFilterGovernorate(value === 'all' ? '' : value);
+            // Reset city filter when governorate changes
+            if (value !== filterGovernorate) {
+              setFilterCity('');
+            }
+          }}>
             <SelectTrigger suppressHydrationWarning>
               <SelectValue placeholder="أختار المحافظة" />
             </SelectTrigger>
             <SelectContent>
-              {governorates.map((gov) => (
-                <SelectItem key={gov.id} value={gov.nameAr}>
-                  {gov.nameAr}
-                </SelectItem>
+              <SelectItem value="all">الكل</SelectItem>
+              {uniqueGovernorates.map(governorate => (
+                <SelectItem key={governorate} value={governorate}>{governorate}</SelectItem>
               ))}
             </SelectContent>
           </Select>
-          <Select>
+          <Select value={filterCity} onValueChange={(value) => setFilterCity(value === 'all' ? '' : value)}>
             <SelectTrigger suppressHydrationWarning>
               <SelectValue placeholder="أختار المدينة" />
             </SelectTrigger>
             <SelectContent>
-              {governorates
-                .flatMap((g) => g.cities)
-                .map((city) => (
-                  <SelectItem key={city.id} value={city.nameAr}>
-                    {city.nameAr}
-                  </SelectItem>
-                ))}
+              <SelectItem value="all">الكل</SelectItem>
+              {uniqueCities.map(city => (
+                <SelectItem key={city} value={city}>{city}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
           <Select onValueChange={(value) => table.getColumn('status')?.setFilterValue(value === 'all' ? '' : value)}>
@@ -868,6 +1237,15 @@ export default function WorkPlanReportPage() {
                  suppressHydrationWarning
                />
              </div>
+            <Button 
+              variant="outline"
+              onClick={fetchWorkPlans}
+              disabled={isLoading}
+              suppressHydrationWarning
+            >
+              <RefreshCw className={`ml-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} /> 
+              {isLoading ? 'جاري التحميل...' : 'تحديث'}
+            </Button>
             <Button className="bg-orange-500 hover:bg-orange-600 text-white" suppressHydrationWarning>
               <Download className="ml-2 h-4 w-4" /> تصدير
             </Button>
@@ -905,7 +1283,19 @@ export default function WorkPlanReportPage() {
             ))}
           </TableHeader>
           <TableBody>
-            {table.getRowModel().rows?.length ? (
+            {isLoading ? (
+              <TableRow>
+                <TableCell
+                  colSpan={columns.length}
+                  className="h-24 text-center"
+                >
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                    <span className="text-muted-foreground">جاري تحميل البيانات...</span>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : table.getRowModel().rows?.length ? (
               table.getRowModel().rows.map((row) => (
                 <TableRow key={row.id}>
                   {row.getVisibleCells().map((cell) => (

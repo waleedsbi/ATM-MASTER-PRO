@@ -56,12 +56,13 @@ import {
 } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import type { Technician } from '@/lib/types';
-import { technicians } from '@/lib/data';
 import { PlaceHolderImages } from '@/lib/placeholder-images';
 import { PlusCircle } from 'lucide-react';
 
-const getAvatarUrl = (avatarId: string) => {
-  return PlaceHolderImages.find(img => img.id === avatarId)?.imageUrl;
+const getAvatarUrl = (avatarUrl?: string | null) => {
+  if (avatarUrl) return avatarUrl;
+  // fallback صورة افتراضية من PlaceHolderImages
+  return PlaceHolderImages[0]?.imageUrl;
 };
 
 const columns: ColumnDef<Technician>[] = [
@@ -81,7 +82,7 @@ const columns: ColumnDef<Technician>[] = [
     cell: ({ row }) => (
       <div className="flex items-center gap-3">
         <Avatar>
-          <AvatarImage src={getAvatarUrl(row.original.avatarId)} data-ai-hint="person portrait" />
+          <AvatarImage src={getAvatarUrl((row.original as any).avatarUrl)} data-ai-hint="person portrait" />
           <AvatarFallback>{row.original.name.charAt(0)}</AvatarFallback>
         </Avatar>
         <div className="font-medium">{row.getValue('name')}</div>
@@ -136,12 +137,31 @@ const columns: ColumnDef<Technician>[] = [
 ];
 
 export default function TechniciansPage() {
-  const [data, setData] = React.useState<Technician[]>(technicians);
+  const [data, setData] = React.useState<Technician[]>([]);
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] =
     React.useState<VisibilityState>({});
   const [rowSelection, setRowSelection] = React.useState({});
+
+  React.useEffect(() => {
+    // جلب الفنيين من قاعدة البيانات
+    (async () => {
+      try {
+        const res = await fetch('/api/technicians', { cache: 'no-store' });
+        if (res.ok) {
+          const technicians = await res.json();
+          if (Array.isArray(technicians)) {
+            setData(technicians);
+          }
+        } else {
+          console.error('Failed to fetch technicians, status:', res.status);
+        }
+      } catch (e) {
+        console.error('Error fetching technicians:', e);
+      }
+    })();
+  }, []);
 
   const table = useReactTable({
     data,
